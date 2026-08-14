@@ -44,7 +44,7 @@ const MAX_REQUESTS_PER_WINDOW = 500;
 const WINDOW_MS = 60000; 
 
 // --- MEDIA STREAM / DELIVERY ROUTE (FIXED) ---
-const { S3Client, GetObjectCommand } = require("@aws-sdk/client-s3");
+const { S3Client, GetObjectCommand, PutObjectCommand, HeadObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const multer = require('multer');
 const multerS3 = require('multer-s3');
@@ -69,8 +69,7 @@ const upload = multer({
             cb(null, { fieldName: file.fieldname });
         },
         key: (req, file, cb) => {
-            const fileExtension = path.extname(file.originalname);
-            const fileName = `${Date.now()}-${path.basename(file.originalname, fileExtension)}${fileExtension}`;
+            const fileName = `${Date.now()}-${path.basename(file.originalname)}`;
             cb(null, fileName); // File name stored in S3
         },
     }),
@@ -3175,12 +3174,13 @@ app.post('/api/posts', upload.any(), async (req, res) => {
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({ error: "FILE_REQUIRED" });
     }
+
     if (!title || !owner) {
       return res.status(400).json({ error: "TITLE_AND_OWNER_REQUIRED" });
     }
 
     const cleanedOwner = cleanPhone(owner);
-    const files = req.files; 
+    const files = req.files;
 
     // 2. Safe duplicate check (Fixed to prevent buffer crashes)
     let contentHash = null;
@@ -3193,26 +3193,39 @@ app.post('/api/posts', upload.any(), async (req, res) => {
       );
 
       const hash = crypto.createHash('sha256');
+
       for (const f of sorted) {
         hash.update(f.originalname || '');
         hash.update(f.mimetype || '');
-        // Safe string format for both diskStorage and memoryStorage:
-        hash.update(f.buffer || `${f.filename || f.originalname}-${f.size}`);
+
+        // Safe string format for both diskStorage and memoryStorage
+        hash.update(
+          f.buffer ||
+          `${f.filename || f.originalname}-${f.size}`
+        );
       }
+
       contentHash = hash.digest('hex');
 
       const existing = await Post.findOne({
-        title: { $regex: new RegExp(`^${title.trim()}$`, 'i') },
+        title: {
+          $regex: new RegExp(`^${title.trim()}$`, 'i')
+        },
         contentHash,
         is_resell: { $ne: true }
       });
 
       if (existing) {
         isDuplicate = true;
-        duplicateReason = "Identical set of files already minted under this title";
+        duplicateReason =
+          "Identical set of files already minted under this title";
       }
+
     } catch (checkErr) {
-      console.warn("⚠️ Duplicate check skipped (non-critical):", checkErr.message);
+      console.warn(
+        "⚠️ Duplicate check skipped (non-critical):",
+        checkErr.message
+      );
     }
 
     if (isDuplicate) {
@@ -3231,21 +3244,43 @@ app.post('/api/posts', upload.any(), async (req, res) => {
       .digest('hex');
 
     // 4. Prepare files metadata
+    //
+    // IMPORTANT:
+    // f.key is the actual S3 object key when using multer-s3.
+    //
     const fileMeta = files.map(f => ({
       filename: f.filename || f.originalname,
       originalname: f.originalname,
+      key: f.key || f.filename || f.originalname,
       mime: f.mimetype,
       size: f.size
     }));
+
+    // Actual S3 key for the primary/original file
+    const primaryFileKey =
+      files[0].key ||
+      files[0].filename ||
+      files[0].originalname;
 
     // 5. Create the post
     const post = await Post.create({
       title: title.trim(),
       price: Number(price) || 0,
       owner: cleanedOwner,
+
       files: fileMeta,
+
+      // IMPORTANT:
+      // This is what /api/media/:postId uses to retrieve
+      // the original object from S3.
+      filekey: primaryFileKey,
+
       mime: files[0].mimetype,
-      filename: files[0].filename || files[0].originalname, // Safe fallback
+
+      filename:
+        files[0].filename ||
+        files[0].originalname,
+
       cid,
       contentHash,
       scarcity_limit: scarcity_limit || 0,
@@ -3254,19 +3289,25 @@ app.post('/api/posts', upload.any(), async (req, res) => {
       fileCount: files.length
     });
 
-    console.log(`✅ New IP Minted | Title: "${title}" | Files: ${files.length} | CID: ${cid}`);
+    console.log(
+      `✅ New IP Minted | Title: "${title}" | Files: ${files.length} | CID: ${cid}`
+    );
+
+    console.log(
+      `📦 Primary S3 Key: ${primaryFileKey}`
+    );
 
     res.status(201).json(post);
 
   } catch (err) {
     console.error("Post creation error:", err);
+
     res.status(500).json({
       error: "Post Sync Failed",
       details: err.message
     });
   }
 });
-
 app.post('/api/posts/stream', async (req, res) => {
     try {
         const { title, price, owner, stream_url, scarcity_limit } = req.body;
@@ -3455,125 +3496,456 @@ app.get('/api/stk-status/:checkoutID', async (req, res) => {
 
 
 app.get('/api/media/:postId', async (req, res) => {
+    let tempInput = null;
+    let tempOutput = null;
+
     try {
+        // ============================================================
+        // 1. AUTHENTICATION
+        // ============================================================
         const { phone } = req.query;
-        if (!phone) return res.status(401).send("PHONE_REQUIRED");
+
+        if (!phone) {
+            return res.status(401).send("PHONE_REQUIRED");
+        }
 
         if (!mongoose.Types.ObjectId.isValid(req.params.postId)) {
             return res.status(400).send("INVALID_POST_ID");
         }
 
-        const post = await Post.findOne({ _id: req.params.postId, is_burned: false });
-        if (!post) return res.status(404).send("NOT_FOUND");
+        // ============================================================
+        // 2. FIND POST
+        // ============================================================
+        const post = await Post.findOne({
+            _id: req.params.postId,
+            is_burned: false
+        });
 
+        if (!post) {
+            return res.status(404).send("NOT_FOUND");
+        }
+
+        // ============================================================
+        // 3. CLEAN PHONE + ACCESS CONTROL
+        // ============================================================
         const cleaned = cleanPhone(phone);
-        const isOwner    = post.owner === cleaned;
-        const isUnlocked = (post.unlocked_by || []).includes(cleaned);
-        const isLicensed = (post.licensed_to || []).includes(cleaned);
+
+        const isOwner =
+            post.owner === cleaned;
+
+        const isUnlocked =
+            (post.unlocked_by || []).includes(cleaned);
+
+        const isLicensed =
+            (post.licensed_to || []).includes(cleaned);
 
         if (!(isOwner || isUnlocked || isLicensed)) {
             return res.status(403).send("LOCKED");
         }
 
-        if (post.is_stream && post.stream_url) {
-            return res.redirect(post.stream_url);
+        // ============================================================
+        // 4. ORIGINAL S3 KEY
+        // IMPORTANT:
+        // Use ONLY the real S3 key stored in post.filekey.
+        // Do NOT fall back to filename or files.
+        // ============================================================
+        const originalKey = post.filekey;
+
+        if (!originalKey || typeof originalKey !== "string") {
+            console.error("❌ FILE_KEY_MISSING", {
+                postId: post._id.toString(),
+                filekey: post.filekey,
+                filename: post.filename
+            });
+
+            return res.status(404).send("FILE_KEY_MISSING");
         }
 
-        const originalKey = post.filekey || post.filename || post.files;
-        if (!originalKey) return res.status(404).send("FILE_KEY_MISSING");
+        console.log("==========================================");
+        console.log("🎬 MEDIA REQUEST");
+        console.log("Post ID:", post._id.toString());
+        console.log("Buyer:", cleaned);
+        console.log("Original S3 Key:", originalKey);
+        console.log("==========================================");
 
-        // ========== WATERMARK LOGIC ==========
-        // We create a unique watermarked version per buyer
-        const watermarkKey = `watermarked/${post._id}_${cleaned}.mp4`;
+        // ============================================================
+        // 5. VERIFY ORIGINAL FILE EXISTS IN S3
+        // This catches NoSuchKey BEFORE watermark processing.
+        // ============================================================
+        try {
+            await s3.send(
+                new HeadObjectCommand({
+                    Bucket: process.env.AWS_S3_BUCKET_NAME,
+                    Key: originalKey
+                })
+            );
 
-        // Check if this buyer already has a watermarked version
-        let finalKey = watermarkKey;
+            console.log("✅ Original file exists in S3:", originalKey);
+
+        } catch (err) {
+            console.error("❌ ORIGINAL FILE NOT FOUND IN S3", {
+                bucket: process.env.AWS_S3_BUCKET_NAME,
+                key: originalKey,
+                errorName: err.name,
+                message: err.message,
+                status: err.$metadata?.httpStatusCode
+            });
+
+            if (
+                err.name === "NotFound" ||
+                err.name === "NoSuchKey" ||
+                err.$metadata?.httpStatusCode === 404
+            ) {
+                return res.status(404).send("ORIGINAL_FILE_NOT_FOUND");
+            }
+
+            throw err;
+        }
+
+        // ============================================================
+        // 6. WATERMARK KEY
+        // One watermarked copy per authorized phone/buyer.
+        // ============================================================
+        const watermarkKey =
+            `watermarked/${post._id}_${cleaned}.mp4`;
+
+        const finalKey = watermarkKey;
+
+        console.log("Watermark S3 Key:", watermarkKey);
+
+        // ============================================================
+        // 7. CHECK IF WATERMARKED VERSION ALREADY EXISTS
+        // ============================================================
         let needsWatermark = false;
 
         try {
-            // Quick check if the watermarked file already exists
-            await s3.send(new GetObjectCommand({
-                Bucket: process.env.AWS_S3_BUCKET_NAME,
-                Key: watermarkKey
-            }));
-            // File exists → use it
+            await s3.send(
+                new HeadObjectCommand({
+                    Bucket: process.env.AWS_S3_BUCKET_NAME,
+                    Key: watermarkKey
+                })
+            );
+
+            console.log(
+                "✅ Watermarked file already exists:",
+                watermarkKey
+            );
+
         } catch (err) {
-            // File does not exist → we need to create it
-            needsWatermark = true;
+
+            if (
+                err.name === "NotFound" ||
+                err.name === "NoSuchKey" ||
+                err.$metadata?.httpStatusCode === 404
+            ) {
+                needsWatermark = true;
+
+                console.log(
+                    "🆕 Watermarked file does not exist:",
+                    watermarkKey
+                );
+
+            } else {
+                console.error(
+                    "❌ S3 watermark existence check failed:",
+                    err
+                );
+
+                throw err;
+            }
         }
 
+        // ============================================================
+        // 8. CREATE WATERMARKED VERSION IF NEEDED
+        // ============================================================
         if (needsWatermark) {
-            console.log(`🎬 Creating watermarked version for ${cleaned}...`);
 
-            // 1. Get a temporary signed URL of the original video
+            console.log(
+                `🎬 Creating watermarked version for ${cleaned}...`
+            );
+
+            console.log(
+                "Bucket:",
+                process.env.AWS_S3_BUCKET_NAME
+            );
+
+            console.log(
+                "Original S3 Key:",
+                originalKey
+            );
+
+            console.log(
+                "Watermark S3 Key:",
+                watermarkKey
+            );
+
+            // ========================================================
+            // 8A. CREATE TEMPORARY SIGNED URL
+            // ========================================================
             const command = new GetObjectCommand({
                 Bucket: process.env.AWS_S3_BUCKET_NAME,
                 Key: originalKey
             });
-            const originalUrl = await getSignedUrl(s3, command, { expiresIn: 300 });
 
-            // 2. Create a temporary local file
-            const tempInput  = path.join('/tmp', `in_${Date.now()}.mp4`);
-            const tempOutput = path.join('/tmp', `out_${Date.now()}.mp4`);
+            const originalUrl = await getSignedUrl(
+                s3,
+                command,
+                {
+                    expiresIn: 300
+                }
+            );
 
-            // Download original
+            console.log("✅ Signed URL generated");
+
+            // ========================================================
+            // 8B. TEMPORARY LOCAL FILES
+            // ========================================================
+            const timestamp = Date.now();
+
+            tempInput = path.join(
+                "/tmp",
+                `in_${post._id}_${timestamp}.mp4`
+            );
+
+            tempOutput = path.join(
+                "/tmp",
+                `out_${post._id}_${timestamp}.mp4`
+            );
+
+            // ========================================================
+            // 8C. DOWNLOAD ORIGINAL VIDEO
+            // ========================================================
             const response = await fetch(originalUrl);
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error("S3 Fetch Error Text:",errorText);
-                return res.status(500).send("S3-DOWNLOAD_FAILED")
-            }
-            const arrayBuffer =await response.arrayBuffer();
-            const buffer = Buffer.from(arrayBuffer);
-            fs.writeFileSync(tempInput, buffer);
 
-            // 3. Apply watermark with FFmpeg
+            if (!response.ok) {
+
+                const errorText = await response.text();
+
+                console.error(
+                    "❌ S3 DOWNLOAD FAILED",
+                    {
+                        status: response.status,
+                        statusText: response.statusText,
+                        errorText
+                    }
+                );
+
+                return res.status(500).send(
+                    "S3_DOWNLOAD_FAILED"
+                );
+            }
+
+            const arrayBuffer =
+                await response.arrayBuffer();
+
+            const buffer =
+                Buffer.from(arrayBuffer);
+
+            fs.writeFileSync(
+                tempInput,
+                buffer
+            );
+
+            console.log(
+                "✅ Original video downloaded:",
+                tempInput
+            );
+
+            // ========================================================
+            // 8D. APPLY WATERMARK WITH FFMPEG
+            // ========================================================
             await new Promise((resolve, reject) => {
+
                 ffmpeg(tempInput)
                     .videoFilters({
-                        filter: 'drawtext',
+                        filter: "drawtext",
                         options: {
-                            text: `iNFLUENSA | NODE:${idppAnonymize(cleaned)}`,
-                            fontcolor: 'white@0.45',
+                            text:
+                                `INFLUENSA | NODE:${idppAnonymize(cleaned)}`,
+
+                            fontcolor: "white@0.45",
+
                             fontsize: 20,
-                            x: 'w-tw-20',
-                            y: 'h-th-20',
+
+                            x: "w-tw-20",
+
+                            y: "h-th-20",
+
                             box: 1,
-                            boxcolor: 'black@0.35'
+
+                            boxcolor: "black@0.35"
                         }
                     })
-                    .outputOptions('-movflags +faststart')
-                    .on('end', resolve)
-                    .on('error', reject)
+
+                    .outputOptions(
+                        "-movflags +faststart"
+                    )
+
+                    .on("start", commandLine => {
+                        console.log(
+                            "🎥 FFmpeg started:",
+                            commandLine
+                        );
+                    })
+
+                    .on("progress", progress => {
+                        if (progress.percent) {
+                            console.log(
+                                `FFmpeg progress: ${progress.percent.toFixed(1)}%`
+                            );
+                        }
+                    })
+
+                    .on("end", () => {
+                        console.log(
+                            "✅ FFmpeg watermark completed"
+                        );
+
+                        resolve();
+                    })
+
+                    .on("error", error => {
+                        console.error(
+                            "❌ FFmpeg error:",
+                            error
+                        );
+
+                        reject(error);
+                    })
+
                     .save(tempOutput);
             });
 
-            // 4. Upload watermarked version to S3
-            const fileContent = fs.readFileSync(tempOutput);
-            await s3.send(new PutObjectCommand({
-                Bucket: process.env.AWS_S3_BUCKET_NAME,
-                Key: watermarkKey,
-                Body: fileContent,
-                ContentType: 'video/mp4'
-            }));
+            // ========================================================
+            // 8E. VERIFY OUTPUT EXISTS
+            // ========================================================
+            if (!fs.existsSync(tempOutput)) {
 
-            // Clean up temp files
-            fs.unlinkSync(tempInput);
-            fs.unlinkSync(tempOutput);
+                console.error(
+                    "❌ FFmpeg output file was not created"
+                );
 
-            console.log(`✅ Watermarked version created: ${watermarkKey}`);
+                return res.status(500).send(
+                    "WATERMARK_OUTPUT_MISSING"
+                );
+            }
+
+            // ========================================================
+            // 8F. UPLOAD WATERMARKED VIDEO TO S3
+            // ========================================================
+            const fileContent =
+                fs.readFileSync(tempOutput);
+
+            await s3.send(
+                new PutObjectCommand({
+                    Bucket:
+                        process.env.AWS_S3_BUCKET_NAME,
+
+                    Key:
+                        watermarkKey,
+
+                    Body:
+                        fileContent,
+
+                    ContentType:
+                        "video/mp4"
+                })
+            );
+
+            console.log(
+                "✅ Watermarked video uploaded:",
+                watermarkKey
+            );
+
+            // ========================================================
+            // 8G. VERIFY WATERMARKED OBJECT
+            // ========================================================
+            await s3.send(
+                new HeadObjectCommand({
+                    Bucket:
+                        process.env.AWS_S3_BUCKET_NAME,
+
+                    Key:
+                        watermarkKey
+                })
+            );
+
+            console.log(
+                "✅ Verified watermarked object:",
+                watermarkKey
+            );
         }
 
-        // 5. Redirect to CloudFront
-        const cloudFrontUrl = `https://${process.env.CLOUDFRONT_DOMAIN}/${finalKey}`;
-        return res.redirect(302, cloudFrontUrl);
+        // ============================================================
+        // 9. CLEAN TEMPORARY FILES
+        // ============================================================
+        if (tempInput && fs.existsSync(tempInput)) {
+            fs.unlinkSync(tempInput);
+        }
+
+        if (tempOutput && fs.existsSync(tempOutput)) {
+            fs.unlinkSync(tempOutput);
+        }
+
+        // ============================================================
+        // 10. CLOUDFRONT REDIRECT
+        // ============================================================
+        const cloudFrontDomain =
+            process.env.CLOUDFRONT_DOMAIN;
+
+        if (!cloudFrontDomain) {
+            console.error(
+                "❌ CLOUDFRONT_DOMAIN is not configured"
+            );
+
+            return res.status(500).send(
+                "CLOUDFRONT_NOT_CONFIGURED"
+            );
+        }
+
+        const cloudFrontUrl =
+            `https://${cloudFrontDomain}/${finalKey}`;
+
+        console.log(
+            "🌐 Redirecting to:",
+            cloudFrontUrl
+        );
+
+        return res.redirect(
+            302,
+            cloudFrontUrl
+        );
 
     } catch (err) {
-        console.error("Media route error:", err);
-        res.status(500).send("MEDIA_ERROR");
+
+        console.error(
+            "❌ MEDIA ROUTE ERROR:",
+            err
+        );
+
+        // ============================================================
+        // CLEAN TEMP FILES EVEN AFTER AN ERROR
+        // ============================================================
+        try {
+            if (tempInput && fs.existsSync(tempInput)) {
+                fs.unlinkSync(tempInput);
+            }
+
+            if (tempOutput && fs.existsSync(tempOutput)) {
+                fs.unlinkSync(tempOutput);
+            }
+        } catch (cleanupError) {
+            console.error(
+                "⚠️ Temp file cleanup failed:",
+                cleanupError
+            );
+        }
+
+        return res.status(500).send(
+            "MEDIA_ERROR"
+        );
     }
 });
-
 app.get('/api/governance/sidebar', async (req, res) => {
     try {
         const vault = await Vault.findOne({ id: 'protocol_vault' });
