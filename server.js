@@ -3453,7 +3453,6 @@ app.get('/api/stk-status/:checkoutID', async (req, res) => {
 
 
 
-
 app.get('/api/media/:postId', async (req, res) => {
     try {
         const { phone } = req.query;
@@ -3461,93 +3460,108 @@ app.get('/api/media/:postId', async (req, res) => {
 
         const post = await Post.findOne({ _id: req.params.postId, is_burned: false });
         if (!post) return res.status(404).send("NOT_FOUND");
-        
-        // Ensure formatting matches exactly what was written by processGridSuccess
+
         const cleaned = cleanPhone(phone);
-        
-        const isOwner = post.owner === cleaned;
-        const isUnlocked = post.unlocked_by.includes(cleaned);
-        const isLicensed = post.licensed_to.includes(cleaned);
+        const isOwner    = post.owner === cleaned;
+        const isUnlocked = (post.unlocked_by || []).includes(cleaned);
+        const isLicensed = (post.licensed_to || []).includes(cleaned);
 
-        const hasAccess = isOwner || isUnlocked || isLicensed;
-
-        if (!hasAccess) {
-            console.log(`🔒 ACCESS DENIED for Node: ${cleaned}. Check: Owner=${isOwner}, Unlocked=${isUnlocked}, Licensed=${isLicensed}`);
+        if (!(isOwner || isUnlocked || isLicensed)) {
             return res.status(403).send("LOCKED");
         }
-        
-        if (post.is_stream) return res.redirect(post.stream_url);
 
-        // 1. Get the S3 key or CloudFront URL from your post document 
-        // (Assuming you stored file.key or file.url inside post.files or post.fileKey)
-        const fileKey = post.fileKey || (post.files && post.files[0] ? post.files[0].key : null);
-        
-        if (!fileKey) {
-            return res.status(404).send("FILE_KEY_MISSING");
+        if (post.is_stream && post.stream_url) {
+            return res.redirect(post.stream_url);
         }
 
-        // 2.  If you don't need heavy server-side ffmpeg watermarking 
-        // on every single frame, you can instantly redirect to CloudFront:
-        // const cloudFrontUrl = `https://${process.env.CLOUDFRONT_DOMAIN}/${fileKey}`;
-        // return res.redirect(cloudFrontUrl);
+        const originalKey = post.fileKey || (post.files && post.files[0]?.key);
+        if (!originalKey) return res.status(404).send("FILE_KEY_MISSING");
 
-        // 3. IF YOU STILL WANT FFPEG STREAMING FROM S3:
-        // Generate a temporary signed S3 URL so FFmpeg can pull the video stream directly from S3
-        const command = new GetObjectCommand({
-            Bucket: process.env.AWS_S3_BUCKET_NAME,
-            Key: fileKey,
-        });
-        
-        // Signed URL valid for 3 minutes for ffmpeg to read from
-        const s3StreamUrl = await getSignedUrl(s3, command, { expiresIn: 180 });
+        // ========== WATERMARK LOGIC ==========
+        // We create a unique watermarked version per buyer
+        const watermarkKey = `watermarked/${post._id}_${cleaned}.mp4`;
 
-        if (post.mime.startsWith('image/')) {
-            // For images with Jimp, pass the remote s3StreamUrl instead of a local file path
-            const image = await Jimp.read(s3StreamUrl);
-            const font = await Jimp.loadFont(Jimp.FONT_SANS_16_WHITE);
-            image.print(font, 10, 10, { text: `IP:${post.cid ? post.cid.slice(0,8) : 'NA'} | NODE:${idppAnonymize(cleaned)}` });
-            const buffer = await image.getBufferAsync(Jimp.MIME_JPEG);
-            return res.type('image/jpeg').send(buffer);
+        // Check if this buyer already has a watermarked version
+        let finalKey = watermarkKey;
+        let needsWatermark = false;
+
+        try {
+            // Quick check if the watermarked file already exists
+            await s3.send(new GetObjectCommand({
+                Bucket: process.env.AWS_S3_BUCKET_NAME,
+                Key: watermarkKey
+            }));
+            // File exists → use it
+        } catch (err) {
+            // File does not exist → we need to create it
+            needsWatermark = true;
         }
 
-        if (post.mime.startsWith('video/')) {
-            res.contentType('video/mp4');
-            // FFmpeg can stream directly from an HTTP URL (S3 Signed URL) just like a local file path!
-            ffmpeg(s3StreamUrl)
-                .on('start', (commandLine) => {
-                    console.log(`🎬 Spawned FFmpeg stream instance from S3: ${commandLine}`);
-                })
-                .videoFilters({
-                    filter: 'drawtext',
-                    options: {
-                        text: `iNFLUENSA | NODE:${idppAnonymize(cleaned)}`,
-                        fontcolor: 'white@0.4',
-                        fontsize: 18,
-                        x: 'w-tw-10',
-                        y: 'h-th-10',
-                        box: 1,
-                        boxcolor: 'black@0.3'
-                    }
-                })
-                .format('mp4')
-                .outputOptions('-movflags frag_keyframe+empty_moov')
-                .on('error', (err) => {
-                    console.error('FFmpeg Stream Error:', err.message);
-                })
-                .pipe(res, { end: true });
-            return;
+        if (needsWatermark) {
+            console.log(`🎬 Creating watermarked version for ${cleaned}...`);
+
+            // 1. Get a temporary signed URL of the original video
+            const command = new GetObjectCommand({
+                Bucket: process.env.AWS_S3_BUCKET_NAME,
+                Key: originalKey
+            });
+            const originalUrl = await getSignedUrl(s3, command, { expiresIn: 300 });
+
+            // 2. Create a temporary local file
+            const tempInput  = path.join('/tmp', `in_${Date.now()}.mp4`);
+            const tempOutput = path.join('/tmp', `out_${Date.now()}.mp4`);
+
+            // Download original
+            const response = await fetch(originalUrl);
+            const buffer = Buffer.from(await response.arrayBuffer());
+            fs.writeFileSync(tempInput, buffer);
+
+            // 3. Apply watermark with FFmpeg
+            await new Promise((resolve, reject) => {
+                ffmpeg(tempInput)
+                    .videoFilters({
+                        filter: 'drawtext',
+                        options: {
+                            text: `iNFLUENSA | NODE:${idppAnonymize(cleaned)}`,
+                            fontcolor: 'white@0.45',
+                            fontsize: 20,
+                            x: 'w-tw-20',
+                            y: 'h-th-20',
+                            box: 1,
+                            boxcolor: 'black@0.35'
+                        }
+                    })
+                    .outputOptions('-movflags +faststart')
+                    .on('end', resolve)
+                    .on('error', reject)
+                    .save(tempOutput);
+            });
+
+            // 4. Upload watermarked version to S3
+            const fileContent = fs.readFileSync(tempOutput);
+            await s3.send(new PutObjectCommand({
+                Bucket: process.env.AWS_S3_BUCKET_NAME,
+                Key: watermarkKey,
+                Body: fileContent,
+                ContentType: 'video/mp4'
+            }));
+
+            // Clean up temp files
+            fs.unlinkSync(tempInput);
+            fs.unlinkSync(tempOutput);
+
+            console.log(`✅ Watermarked version created: ${watermarkKey}`);
         }
 
-        // Fallback: Redirect straight to CloudFront for other file types
-        return res.redirect(`https://${process.env.CLOUDFRONT_DOMAIN}/${fileKey}`);
+        // 5. Redirect to CloudFront
+        const cloudFrontUrl = `https://${process.env.CLOUDFRONT_DOMAIN}/${finalKey}`;
+        return res.redirect(302, cloudFrontUrl);
 
-    } catch (err) { 
-        console.error("Grid Error Route:", err);
-        res.status(500).send("GRID_ERROR"); 
+    } catch (err) {
+        console.error("Media route error:", err);
+        res.status(500).send("MEDIA_ERROR");
     }
 });
-
-
 
 app.get('/api/governance/sidebar', async (req, res) => {
     try {
