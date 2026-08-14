@@ -3479,7 +3479,7 @@ app.get('/api/media/:postId', async (req, res) => {
             return res.redirect(post.stream_url);
         }
 
-        const originalKey = post.filekey || post.filename || (post.files && post.files[0]?.key);
+        const originalKey = post.filekey || post.filename || post.files;
         if (!originalKey) return res.status(404).send("FILE_KEY_MISSING");
 
         // ========== WATERMARK LOGIC ==========
