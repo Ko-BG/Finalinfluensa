@@ -3518,8 +3518,10 @@ app.get('/api/media/:postId', async (req, res) => {
 
             // Download original
             const response = await fetch(originalUrl);
-            const buffer = await response.arrayBuffer();
-            fs.writeFileSync(tempInput, Buffer.from(Buffer));
+            const blob = await response.blob();
+            const arrayBuffer =await blob.arrayBuffer();
+            const buffer = Buffer.from(arrayBuffer);
+            fs.writeFileSync(tempInput, buffer);
 
             // 3. Apply watermark with FFmpeg
             await new Promise((resolve, reject) => {
