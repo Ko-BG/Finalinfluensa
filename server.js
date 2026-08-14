@@ -1959,7 +1959,7 @@ async function triggerB2C(phone, amount, remark = "iNFLUENSA Payout") {
         throw err;
     }
 }
-// 1. const triggerFlutterwavePush = async (phone, amountInKES, postId, type, handshakeId = null) => {
+1. const triggerFlutterwavePush = async (phone, amountInKES, postId, type, handshakeId = null) => {
     try {
         // ✅ Live currency + rate
         const currencyData = await getCurrencyByPhone(phone);
