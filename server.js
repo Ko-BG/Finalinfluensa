@@ -3459,6 +3459,10 @@ app.get('/api/media/:postId', async (req, res) => {
         const { phone } = req.query;
         if (!phone) return res.status(401).send("PHONE_REQUIRED");
 
+        if (!mongoose.Types.ObjectId.isValid(req.params.postId)) {
+            return res.status(400).send("INVALID_POST_ID");
+        }
+
         const post = await Post.findOne({ _id: req.params.postId, is_burned: false });
         if (!post) return res.status(404).send("NOT_FOUND");
 
