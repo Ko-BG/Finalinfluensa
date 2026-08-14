@@ -414,7 +414,7 @@ const postSchema = new mongoose.Schema({
     owner: String, 
     mime: String, 
     filename: String, 
-    filekey: String,
+    filekey: { type: String, index: true }, 
     cid: { type: String, index: true }, 
     contentHash: { type: String, index: true },   // ← NEW: File content hash
     unlocked_by: [String], 
