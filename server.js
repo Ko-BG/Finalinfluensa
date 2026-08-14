@@ -3522,7 +3522,7 @@ app.get('/api/media/:postId', async (req, res) => {
                 const errorText = await response.text();
                 console.error("S3 Fetch Error Text:",errorText);
                 return res.status(500).send("S3-DOWNLOAD_FAILED")
-   
+            }
             const arrayBuffer =await response.arrayBuffer();
             const buffer = Buffer.from(arrayBuffer);
             fs.writeFileSync(tempInput, buffer);
