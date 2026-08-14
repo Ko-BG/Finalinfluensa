@@ -415,6 +415,7 @@ const postSchema = new mongoose.Schema({
     owner: String, 
     mime: String, 
     filename: String, 
+    filekey: string,
     cid: { type: String, index: true }, 
     contentHash: { type: String, index: true },   // ← NEW: File content hash
     unlocked_by: [String], 
@@ -3474,7 +3475,7 @@ app.get('/api/media/:postId', async (req, res) => {
             return res.redirect(post.stream_url);
         }
 
-        const originalKey = post.fileKey || (post.files && post.files[0]?.key);
+        const originalKey = post.filekey || post.filename || (post.files && post.files[0]?.key);
         if (!originalKey) return res.status(404).send("FILE_KEY_MISSING");
 
         // ========== WATERMARK LOGIC ==========
