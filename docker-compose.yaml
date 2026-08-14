@@ -1,0 +1,67 @@
+Docker compose.yaml
+
+version: '3.8'
+
+services:
+
+  # 1. DATABASE
+  mongodb:
+    image: mongo:7.0
+    container_name: influensa_db
+
+    restart: always
+
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: secret_password_here
+
+    volumes:
+      - mongo_data:/data/db
+
+    networks:
+      - influensa_net
+
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 2. NODE APP
+  app:
+    build: .
+
+    container_name: influensa_app
+
+    restart: always
+
+    env_file:
+      - .env
+
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /app/secrets/gcs-key.json
+      GCS_BUCKET: YOUR_BUCKET_NAME
+
+    ports:
+      - "5000:5000"
+
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+    volumes:
+      # Google Cloud Storage mount
+      - /mnt/gcs:/app/uploads
+
+      # Google Cloud credentials
+      - ~/secrets:/app/secrets:ro
+
+    networks:
+      - influensa_net
+
+volumes:
+  mongo_data:
+
+networks:
+  influensa_net:
+    driver: bridge
