@@ -1,0 +1,42 @@
+<div class="dashboard-grid">
+    <div class="stat-card gold-border">
+        <h3>GLOBAL VAULT (7.89%)</h3>
+        <div class="value">KES <span id="vault-total">0.00</span></div>
+        <p>Protocol Maintenance Fund</p>
+    </div>
+
+    <div class="stat-card blue-border">
+        <h3>CONNECTED NODES</h3>
+        <div class="value" id="node-count">0</div>
+        <p>Active Users on the Grid</p>
+    </div>
+
+    <div class="stat-card green-border">
+        <h3>IP ASSETS MINTED</h3>
+        <div class="value" id="asset-count">0</div>
+        <p>Neural Stamps Verified</p>
+    </div>
+</div>
+
+<style>
+    .dashboard-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; padding: 20px; background: #0a0a0a; color: white; font-family: 'Space Grotesk', sans-serif; }
+    .stat-card { background: #1a1a1a; padding: 30px; border-radius: 15px; text-align: center; border: 1px solid #333; }
+    .gold-border { border-top: 5px solid #FFD700; }
+    .blue-border { border-top: 5px solid #00D1FF; }
+    .green-border { border-top: 5px solid #00FF41; }
+    .value { font-size: 3rem; font-weight: bold; margin: 10px 0; }
+</style>
+
+<script>
+const API_URL = 'https://www.influensa.ke/api';
+
+    async function updateStats() {
+        const res = await fetch('/api/admin/stats');
+        const data = await res.json();
+        document.getElementById('vault-total').innerText = data.vaultBalance;
+        document.getElementById('node-count').innerText = data.nodes;
+        document.getElementById('asset-count').innerText = data.assets;
+    }
+    setInterval(updateStats, 5000); // Refresh every 5 seconds for "Live" feel
+    updateStats();
+</script>
