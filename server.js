@@ -3518,8 +3518,12 @@ app.get('/api/media/:postId', async (req, res) => {
 
             // Download original
             const response = await fetch(originalUrl);
-            const blob = await response.blob();
-            const arrayBuffer =await blob.arrayBuffer();
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error("S3 Fetch Error Text:",errorText);
+                return res.status(500).send("S3-DOWNLOAD_FAILED")
+   
+            const arrayBuffer =await response.arrayBuffer();
             const buffer = Buffer.from(arrayBuffer);
             fs.writeFileSync(tempInput, buffer);
 
