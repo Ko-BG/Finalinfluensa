@@ -1,1 +1,2668 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>iNFLUENSA — Afro-Futurist IP Protocol</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://js.stripe.com/v3/"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Syncopate:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    :root { 
+      --solar: #facc15; 
+      --bg: #0a0e1f; 
+      --neon-cyan: #67e8f9;
+      --deep-mesh: rgba(15, 23, 42, 0.9);
+      --pulse-red: #ef4444;
+    }
+    body { 
+      font-family: 'Space Grotesk', sans-serif; 
+      background: var(--bg); 
+      color: #e0e7ff;
+      background-image: radial-gradient(circle at 50% 0%, rgba(99, 102, 241, 0.15), transparent 50%);
+      
+      /* FRONTEND SHIELD: STOP TEXT SELECTION */
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
+    }
+
+    /* FRONTEND SHIELD: ANTI-SCREENSHOT/PRINT BLUR */
+    @media print {
+        body { display: none !important; }
+        .no-print { display: none !important; }
+    }
+
+    .logo-text { font-family: 'Syncopate', sans-serif; letter-spacing: 6px; background: linear-gradient(90deg, #facc15, #67e8f9); -webkit-background-clip: text; color: transparent; }
+    
+    .glitch-hover:hover {
+      animation: glitch 0.3s cubic-bezier(.25,.46,.45,.94) both infinite;
+    }
+    @keyframes glitch {
+      0% { transform: translate(0); }
+      20% { transform: translate(-2px, 2px); }
+      40% { transform: translate(-2px, -2px); }
+      60% { transform: translate(2px, 2px); }
+      80% { transform: translate(2px, -2px); }
+      100% { transform: translate(0); }
+    }
+
+    .glass { background: rgba(255,255,255,0.03); backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.08); border-radius: 1.5rem; transition: all 0.5s ease; }
+    .glass-dark { background: rgba(0,0,0,0.4); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.05); }
+    .input-field { background: rgba(15, 23, 42, 0.8); border: 1px solid rgba(255,255,255,0.1); color: white; transition: 0.2s; }
+    .input-field:focus { border-color: var(--solar); outline: none; box-shadow: 0 0 15px rgba(250, 204, 21, 0.1); }
+    .btn-glow { transition: 0.3s; box-shadow: 0 0 20px rgba(250,204,21,0.1); }
+    .btn-glow:hover { box-shadow: 0 0 40px rgba(250, 204, 21, 0.4); transform: translateY(-2px); }
+    .stamped-bg { background-image: radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1px); background-size: 12px 12px; }
+    .progress-ring { transition: stroke-dashoffset 0.35s; transform: rotate(-90deg); transform-origin: 50% 50%; }
+    #searchContainer { transition: all 0.4s ease; border: 1px solid rgba(255,255,255,0.05); }
+    #searchContainer:focus-within { border-color: var(--solar); transform: translateY(-2px); background: rgba(255,255,255,0.05); }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    .handshake-shake:hover { animation: shake 0.5s infinite alternate; }
+    @keyframes shake { from { transform: rotate(-10deg); } to { transform: rotate(10deg); } }
+    #cinematicLaunch { background: #0a0e1f; z-index: 200; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    .launch-letter { opacity: 0; display: inline-block; transform: scale(1.5); transition: all 0.4s ease; }
+    .launch-letter.active { opacity: 1; transform: scale(1); }
+    .anti-piracy-overlay { pointer-events: none; background: repeating-linear-gradient(45deg, rgba(250,204,21,0.03) 0, rgba(250,204,21,0.03) 1px, transparent 0, transparent 50%); background-size: 30px 30px; }
+    #sig-canvas { cursor: crosshair; background: rgba(255,255,255,0.05); border: 1px dashed rgba(255,255,255,0.2); }
+    
+    /* MODIFIED: Polling Pulse Animation */
+    @keyframes pulse-yellow {
+      0% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.7; transform: scale(0.98); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+    .processing-payout { 
+        animation: pulse-yellow 1.5s infinite; 
+        background: #854d0e !important; 
+        color: white !important; 
+        cursor: wait !important;
+    }
+
+    .has-offer::after { content: ''; position: absolute; top: 0; right: 0; width: 12px; height: 12px; background: #22c55e; border: 2px solid #0a0e1f; border-radius: 50%; box-shadow: 0 0 10px #22c55e; }
+    #sig-review-img { max-width: 100%; border-radius: 12px; border: 1px solid rgba(250, 204, 21, 0.3); background: rgba(0,0,0,0.4); }
+    .cyber-border { border-left: 2px solid var(--solar); }
+    .tab-active { color: var(--solar); border-bottom: 2px solid var(--solar); }
+    .tab-active { color: var(--solar); border-bottom: 2px solid var(--solar); }
+    .stat-card { border-left: 2px solid rgba(255,255,255,0.1); padding-left: 1rem; }
+    @keyframes scanline { 0% { top: 0; } 100% { top: 100%; } }
+    .scan-line { position: absolute; width: 100%; height: 2px; background: rgba(250,204,21,0.2); animation: scanline 4s linear infinite; }
+
+    .audio-bar { width: 3px; background: var(--solar); border-radius: 2px; animation: bar-grow 1s ease-in-out infinite alternate; }
+    @keyframes bar-grow { 0% { height: 4px; } 100% { height: 20px; } }
+
+    #toast-container { position: fixed; top: 2rem; right: 2rem; z-index: 1000; display: flex; flex-direction: column; gap: 0.5rem; }
+    .toast { background: rgba(0,0,0,0.8); border: 1px solid var(--solar); padding: 1rem; border-radius: 0.75rem; font-size: 0.75rem; color: white; backdrop-filter: blur(10px); animation: slide-in 0.3s ease-out; }
+    @keyframes slide-in { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+    .burning { 
+        filter: grayscale(1) contrast(3) brightness(2);
+        opacity: 0;
+        transform: scale(0.9) translateY(20px);
+        transition: all 0.8s ease-out;
+        pointer-events: none;
+    }
+    #tab-indicator {
+  width: 50%; /* Starts at first tab */
+  left: 0;
+}
+
+.tab-active #tab-indicator {
+  width: 50%;
+}
+
+#tab-ip.tab-active ~ #tab-indicator {
+  left: 0;
+}
+
+#tab-ecom.tab-active ~ #tab-indicator {
+  left: 50%;
+}
+    .legal-seal { border: 2px solid var(--solar); border-radius: 50%; width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; font-weight: 900; color: var(--solar); position: absolute; bottom: 40px; right: 40px; transform: rotate(-15deg); opacity: 0.6; }
+  </style>
+</head>
+<body class="antialiased p-5 lg:p-12 overflow-hidden">
+
+<div id="toast-container"></div>
+
+<div id="cinematicLaunch" class="fixed inset-0">
+    <div id="launchText" class="logo-text text-5xl md:text-7xl font-bold mb-4 glitch-hover"></div>
+    <div id="launchSub" class="text-[10px] uppercase tracking-[0.6em] text-cyan-400 opacity-0 transition-opacity duration-1000">the power of influens</div>
+</div>
+
+<div id="neuralErrorOverlay" class="fixed inset-0 z-[500] bg-red-950/90 backdrop-blur-xl hidden flex flex-col items-center justify-center p-6">
+    <div class="text-6xl mb-4">⚠️</div>
+    <h2 class="text-2xl font-bold uppercase tracking-widest text-white">Mesh Disconnected</h2>
+    <p id="errorMessage" class="text-red-400 font-mono text-sm mt-2 mb-8">PROTOCOL_ERROR: SYNC_INTERRUPTED</p>
+    <button onclick="window.location.reload()" class="px-8 py-3 bg-white text-black font-bold uppercase tracking-tighter hover:bg-red-200 transition-all">Attempt Re-link</button>
+</div>
+
+<div id="initOverlay" class="fixed inset-0 z-[100] bg-[#0a0e1f] flex items-center justify-center p-6 hidden">
+  <div class="glass p-10 w-full max-w-md text-center border-yellow-500/20">
+    <h1 class="logo-text text-3xl font-bold mb-2 uppercase">iNFLUENSA</h1>
+    <p class="text-[10px] uppercase tracking-[0.3em] text-cyan-400 mb-8 font-bold">Initialize Neural Link</p>
+    <div class="space-y-4">
+      <input id="phoneInput" type="tel" class="input-field w-full p-5 rounded-2xl text-center text-xl tracking-widest font-bold" placeholder="2547..."/>
+      <div class="flex gap-2">
+          <select id="langSelect" class="bg-white/5 border border-white/10 rounded-xl px-4 text-[10px] uppercase font-bold text-slate-400">
+              <option value="en">ENG</option>
+              <option value="sw">SWA</option>
+          </select>
+          <button onclick="initializeGrid()" class="btn-glow flex-1 py-5 rounded-2xl bg-yellow-500 text-black font-black uppercase text-sm tracking-[0.2em]">Initialize Grid</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="max-w-7xl mx-auto relative">
+  <header class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6 mb-8">
+    <div class="relative group cursor-pointer" onclick="triggerEasterEgg()">
+      <h1 class="logo-text text-4xl font-bold uppercase glitch-hover">iNFLUENSA</h1>
+      <div class="flex gap-4 mt-2">
+        <p class="opacity-70 text-[9px] tracking-[0.3em] uppercase font-bold text-cyan-400"> V5.3 MASTER</p>
+        <p id="protocolUsers" class="text-[9px] text-yellow-500 font-bold uppercase tracking-[0.3em]">CONNECTING NODES...</p>
+      </div>
+    </div>
+    
+    <div class="flex flex-wrap gap-4">
+      <button onclick="toggleAnalytics()" class="glass px-4 flex items-center justify-center hover:border-cyan-500/50 transition-all">
+          <span class="text-xl">📊</span>
+      </button>
+
+      <button onclick="viewActiveHandshakes()" id="handshakeNotifyBtn" class="glass px-4 flex items-center justify-center relative border-white/5 hover:border-yellow-500/50 transition-all">
+         <span class="text-xl">🤝</span>
+         <div id="handshakeDot" class="hidden absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full animate-pulse shadow-[0_0_10px_#22c55e]"></div>
+      </button>
+
+      <div class="glass px-6 py-3 text-[11px] font-mono border-yellow-500/20 bg-yellow-500/5">
+        <div id="taxVaultDisplay" class="text-yellow-500 font-bold tracking-widest uppercase text-right">KES 0.00</div>
+        <div class="text-[7px] opacity-40 uppercase tracking-tighter text-right">Global Tax Vault (<span id="vaultPercentDisplay">7.89</span>%)</div>
+      </div>
+   
+
+<div id="walletDisplay" class="flex items-center gap-4">
+    <div class="glass px-6 py-3 text-[11px] font-mono border-white/5 flex flex-col items-end w-full">
+        <div class="flex items-center gap-3">
+            <span id="afroCoinsDisplay" onclick="openAfroMarketplace()" title="Open P2P Marketplace" class="text-cyan-400 font-bold tracking-tighter cursor-pointer hover:text-cyan-300 hover:scale-105 transition-all flex items-center gap-1">
+                💱 0.00 ₳
+            </span>
+            <span class="w-px h-3 bg-white/10"></span>
+            <span id="earningsDisplay" class="text-yellow-500 font-bold tracking-tighter">KES 0.00</span>
+            <button id="withdrawBtn" onclick="requestWithdrawal()" class="ml-2 text-[8px] bg-yellow-500/20 hover:bg-yellow-500 hover:text-black text-yellow-500 px-2 py-1 rounded-md font-bold transition-all uppercase tracking-tighter">Withdraw</button>
+            <button onclick="toggleMerchantMode()" id="merchantToggleBtn"
+        class="ml-2 px-4 py-1.5 text-xs font-bold bg-purple-500/20 hover:bg-purple-500 text-purple-400 rounded-xl transition-all">
+  👤 Switch to Merchant Mode
+</button>
+         <button onclick="generateRedemptionCode()" 
+                    class="ml-2 text-[8px] bg-amber-500/20 hover:bg-amber-500 hover:text-black text-amber-400 px-3 py-1 rounded-md font-bold transition-all uppercase tracking-tighter">
+                🛒 Redeem AFRO
+            </button>
+        </div>
+        <div id="nodeID" class="text-[7px] opacity-30 uppercase tracking-[0.2em] mt-1">LINKING NODE...</div>
+    </div>
+</div>
+        </div>
+        <div id="nodeID" class="text-[7px] opacity-30 uppercase tracking-[0.2em] mt-1">LINKING NODE...</div>
+    </div>
+</div>
+
+
+  </header>
+  <div id="afroMarketplaceModal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 font-mono">
+    <div class="bg-[#0B1528] border border-white/10 w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden shadow-2xl rounded-lg">
+        
+        <div class="p-6 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
+            <div>
+                <h2 class="text-cyan-400 font-bold text-sm uppercase tracking-wider flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+                    AFRO COIN P2P FX LIQUIDITY POOL
+                </h2>
+                <p class="text-[9px] text-white/40 mt-1 uppercase">Direct peer-to-peer escrow-protected token conversions</p>
+            </div>
+            <button onclick="closeAfroMarketplace()" class="text-white/40 hover:text-white text-xs border border-white/10 px-3 py-1 bg-white/5 uppercase transition-all">Close [X]</button>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 border-b border-white/5">
+            <div class="p-6 border-r border-white/5 bg-white/[0.01] flex flex-col gap-4">
+                <h3 class="text-yellow-500 font-bold text-[11px] uppercase tracking-wider">Create a Liquidity Offer</h3>
+                <div>
+                    <label class="text-[9px] text-white/40 uppercase block mb-1">AFRO Amount to Sell</label>
+                    <input type="number" id="p2pSellAmount" step="0.01" placeholder="0.00" class="w-full bg-black/40 border border-white/10 text-white p-2 text-xs focus:outline-none focus:border-cyan-400 font-mono" />
+                </div>
+                <div>
+                    <label class="text-[9px] text-white/40 uppercase block mb-1">Exchange Rate (KES / 1 AFRO)</label>
+                    <input type="number" id="p2pSellRate" step="0.1" placeholder="e.g. 15.00" class="w-full bg-black/40 border border-white/10 text-white p-2 text-xs focus:outline-none focus:border-cyan-400 font-mono" />
+                </div>
+                <div>
+                    <label class="text-[9px] text-white/40 uppercase block mb-1">Your Payout Gateway Data (M-PESA Number/Till)</label>
+                    <input type="text" id="p2pPaymentDetails" placeholder="M-PESA TILL 543210..." class="w-full bg-black/40 border border-white/10 text-white p-2 text-xs focus:outline-none focus:border-cyan-400 font-mono" />
+                </div>
+                <button onclick="executeCreateP2pAd()" class="w-full bg-cyan-500/20 hover:bg-cyan-500 hover:text-black border border-cyan-400 text-cyan-400 text-[10px] py-2.5 uppercase font-bold tracking-wider transition-all mt-2">
+                    Inject Liquidity Ad
+                </button>
+            </div>
+
+            <div class="col-span-2 p-6 flex flex-col overflow-hidden">
+                <h3 class="text-white font-bold text-[11px] uppercase tracking-wider mb-4 flex justify-between items-center">
+                    <span>Available Peer Orders</span>
+                    <button onclick="fetchActiveMarketplaceOrders()" class="text-[9px] text-cyan-400 hover:underline uppercase font-normal">↺ Sync Board</button>
+                </h3>
+                <div class="overflow-y-auto flex-1 pr-1 space-y-2 max-h-[250px]" id="p2pOrdersContainer">
+                    <div class="text-[10px] text-white/30 text-center py-8">Loading real-time order books...</div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="activeTradeContext" class="hidden p-6 bg-yellow-500/5 border-t border-yellow-500/20 flex flex-col gap-3">
+            <div class="flex justify-between items-center">
+                <h4 class="text-yellow-500 font-bold text-[10px] uppercase tracking-widest animate-pulse">▲ Trade Interaction Process Initialized</h4>
+                <div id="tradeTimer" class="text-[10px] text-white/60"></div>
+            </div>
+            <div id="tradeActionDetails" class="text-xs text-white/80 leading-relaxed font-mono"></div>
+        </div>
+    </div>
+</div>
+
+
+  <div id="searchContainer" class="glass mb-8 flex items-center overflow-hidden">
+    <div class="pl-6 opacity-30 text-xl">🔍</div>
+    <input id="searchInput" type="text" oninput="debounceSearch(this.value)" class="w-full bg-transparent p-6 outline-none text-xl font-light placeholder:text-slate-600" placeholder="Search IP by Title, Creator, or CID..."/>
+    <div class="flex gap-2 pr-6">
+        <button onclick="filterBy('all')" class="text-[9px] font-bold uppercase px-3 py-1 bg-white/10 rounded-full text-yellow-500">All</button>
+        <button onclick="filterBy('audio')" class="text-[9px] font-bold uppercase px-3 py-1 bg-white/5 rounded-full hover:bg-white/10">Audio</button>
+        <button onclick="filterBy('video')" class="text-[9px] font-bold uppercase px-3 py-1 bg-white/5 rounded-full hover:bg-white/10">Video</button>
+    </div>
+  </div>
+
+  <main class="grid lg:grid-cols-12 gap-8">
+  <aside id="analyticsSidebar" class="hidden lg:col-span-3 space-y-6">
+    
+  <div class="glass p-6 border-cyan-500/20">
+    <h3 class="text-[10px] font-black uppercase tracking-[0.4em] text-cyan-400 mb-6">Node Performance</h3>
+    <div class="space-y-6">
+        <div class="stat-card">
+            <div class="text-slate-500 text-[9px] uppercase">Neural Uplink</div>
+            <div id="uplinkDisplay" class="text-xl font-bold">99.2%</div>
+        </div>
+        <div class="stat-card">
+            <div class="text-slate-500 text-[9px] uppercase">IP Circulation</div>
+            <div id="circulationDisplay" class="text-xl font-bold">...</div>
+        </div>
+        <div class="stat-card">
+            <div class="text-slate-500 text-[9px] uppercase">Gas Efficiency</div>
+            <div id="gasEfficiencyDisplay" class="text-xl font-bold text-green-500">LOW_FEE</div>
+        </div>
+    </div>
+    <div class="mt-8 pt-6 border-t border-white/5">
+        <p class="text-[8px] text-slate-500 leading-relaxed uppercase">The iNFLUENSA protocol utilizes sharded consensus to ensure sub-second IP registration across all Global nodes.</p>
+    </div>
+</div>
+
+
+</aside>
+<!-- TAB NAVIGATION -->
+<!-- Enhanced Tab Navigation -->
+<div class="flex border-b border-white/10 mb-10 relative">
+  <button onclick="switchTab(0)" id="tab-ip" 
+    class="tab-active flex-1 py-5 text-center font-bold uppercase tracking-[0.5px] text-sm transition-all duration-300 flex items-center justify-center gap-2 hover:text-yellow-400">
+    <span class="text-lg">🌐</span>
+    IP Marketplace
+  </button>
+  
+  <button onclick="switchTab(1)" id="tab-ecom" 
+    class="flex-1 py-5 text-center font-bold uppercase tracking-[0.5px] text-sm transition-all duration-300 flex items-center justify-center gap-2 hover:text-emerald-400">
+    <span class="text-lg">🛍️</span>
+    E-Commerce Store
+  </button>
+
+  <!-- Sliding Indicator -->
+  <div id="tab-indicator" 
+    class="absolute bottom-0 h-0.5 bg-gradient-to-r from-yellow-400 to-emerald-400 transition-all duration-500 rounded-full"></div>
+</div>
+<!-- ECOMMERCE SECTION (hidden by default) -->
+<section id="ecomSection" class="hidden lg:col-span-12">
+  <div class="flex justify-between items-center mb-6">
+    <h2 class="text-2xl font-bold text-yellow-400">🛒 iNFLUENSA Commerce</h2>
+    <input id="ecomSearch" type="text" placeholder="Search products..." 
+      class="input-field w-80 p-3 rounded-2xl" oninput="debounceEcomSearch(this.value)">
+  </div>
+  
+  <div id="ecomContainer" class="grid sm:grid-cols-2 lg:grid-cols-3 gap-8"></div>
+</section>
+<div id="resellModal" class="fixed inset-0 bg-black/95 backdrop-blur-2xl hidden z-[130] flex items-center justify-center p-4">
+  <div class="glass p-8 w-full max-w-md border-cyan-500/30">
+      <div class="flex justify-between items-center mb-6">
+          <h3 class="text-2xl font-bold text-cyan-400 uppercase tracking-tighter">Deploy Resell Node</h3>
+          <button onclick="closeResellModal()" class="text-slate-500 hover:text-white">✕</button>
+      </div>
+      <div class="space-y-4">
+          <div class="bg-white/5 p-4 rounded-xl border border-white/10">
+              <label class="text-[9px] uppercase text-slate-400 block mb-1">Target IP Title</label>
+              <div id="resellTargetTitle" class="text-sm font-bold text-white truncate">...</div>
+          </div>
+          <div>
+              <label class="text-[10px] uppercase text-slate-500 block mb-2">New Retail Price (<span id="resellCurrencyLabel">KES</span>)</label>
+              <input id="resellPriceInput" type="number" class="input-field w-full p-4 rounded-xl text-xl font-bold tracking-widest" placeholder="500" oninput="calculateResellSplits(this.value)"/>
+          </div>
+          
+          <div class="bg-black/40 p-4 rounded-xl border border-white/5 space-y-2 text-[10px] font-mono">
+              <div class="flex justify-between text-slate-400">
+                  <span>Protocol Engine Fee (7.89%):</span>
+                  <span id="resellPlatformCut" class="text-white">KES 0.00</span>
+              </div>
+              <div class="flex justify-between text-slate-400">
+                  <span>Root Royalty (15.00%):</span>
+                  <span id="resellCreatorCut" class="text-amber-400 font-bold">KES 0.00</span>
+              </div>
+              <div class="flex justify-between text-emerald-400 pt-2 border-t border-white/5 font-bold">
+                  <span>Your Secondary Yield (77.11%):</span>
+                  <span id="resellNetYield">KES 0.00</span>
+              </div>
+          </div>
+
+          <button id="resellSubmitBtn" onclick="finalizeResellDeployment()" class="w-full py-5 bg-gradient-to-r from-cyan-500 to-blue-500 text-black font-black uppercase tracking-widest rounded-xl btn-glow mt-4">Deploy Fractional Listing</button>
+          <p class="text-[7px] text-center opacity-40 uppercase tracking-widest mt-3">This action clones a localized item listing block on the ledger grid.</p>
+      </div>
+  </div>
+</div>
+
+    <section id="mainFeedSection" class="lg:col-span-12">
+      <div id="feedContainer" class="grid sm:grid-cols-2 lg:grid-cols-3 gap-8"></div>
+    </section>
+
+    <section class="lg:col-span-12 mt-8">
+      <div class="glass p-8 border-cyan-500/20 relative overflow-hidden">
+        <div class="scan-line"></div>
+        <div class="flex items-center justify-between mb-6">
+          <div class="flex items-center gap-3">
+            <div class="w-2 h-2 bg-cyan-500 rounded-full animate-ping"></div>
+            <h3 class="text-[10px] font-black uppercase tracking-[0.4em] text-cyan-400">Live Neural Ledger</h3>
+          </div>
+          <div class="flex gap-4">
+              <span id="latencyDisplay" class="text-[8px] font-mono opacity-40 uppercase">Latency: 22ms</span>
+              <span id="blockHeight" class="text-[8px] font-mono opacity-40 uppercase">Block: #882,109</span>
+          </div>
+        </div>
+        <div id="neuralPulse" class="space-y-3 h-32 overflow-hidden opacity-60 font-mono text-[10px] no-scrollbar"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="handshakeModal" class="fixed inset-0 bg-black/98 backdrop-blur-2xl hidden z-[110] flex items-center justify-center p-4">
+    <div class="glass p-8 w-full max-w-2xl border-yellow-500/30">
+        <div class="flex justify-between items-center mb-6">
+            <h3 id="hsModalTitle" class="text-2xl font-bold text-yellow-500 uppercase">Collaboration Handshake</h3>
+            <button onclick="closeHandshake()" class="text-slate-500 hover:text-white">✕</button>
+        </div>
+        
+        <div id="hsListMode" class="hidden space-y-4 max-h-96 overflow-y-auto pr-2 no-scrollbar"></div>
+
+        <div id="hsNegotiateMode" class="space-y-6">
+            <p class="text-[11px] text-slate-400 uppercase tracking-widest">Negotiating Licensing agreement for: <span id="collabTitle" class="text-white">...</span></p>
+            <div class="grid grid-cols-2 gap-4">
+                <div class="p-4 bg-white/5 rounded-xl border border-white/10">
+                    <label class="text-[9px] uppercase text-cyan-400 block mb-2">Revenue Split %</label>
+                    <input type="number" id="splitInput" class="bg-transparent w-full text-2xl font-bold outline-none" value="50">
+                </div>
+                <div class="p-4 bg-white/5 rounded-xl border border-white/10">
+                    <label class="text-[9px] uppercase text-cyan-400 block mb-2">Agreement Hash</label>
+                    <div id="agreementHash" class="text-[9px] font-mono break-all opacity-40">WAITING_FOR_SIGNATURE</div>
+                </div>
+            </div>
+            
+            <div id="signatureArea">
+                <label class="text-[10px] uppercase text-slate-500 block mb-2">Sign here to Hash Agreement</label>
+                <canvas id="sig-canvas" width="600" height="200" class="w-full rounded-xl"></canvas>
+            </div>
+            
+            <div id="signatureReviewArea" class="hidden">
+                 <label class="text-[10px] uppercase text-yellow-500 block mb-2">Neural Signature Received:</label>
+                 <img id="sig-review-img" src="" alt="Neural Signature">
+            </div>
+
+            <div id="hsActionBtns" class="flex flex-col gap-3">
+                <button id="mainHsBtn" onclick="finalizeHandshake()" class="w-full py-5 bg-yellow-500 text-black font-black uppercase tracking-widest rounded-xl btn-glow">Commit Neural Signature</button>
+                <div id="creatorResponseBtns" class="hidden flex gap-3">
+                    <button onclick="respondToHandshake('accept')" class="flex-1 py-4 bg-green-600 text-white font-bold uppercase rounded-xl hover:bg-green-500 transition-all">Accept</button>
+                    <button onclick="respondToHandshake('negotiate')" class="flex-1 py-4 bg-white/10 text-white font-bold uppercase rounded-xl border border-white/10">Counter</button>
+                    <button onclick="respondToHandshake('reject')" class="flex-1 py-4 bg-red-900/40 text-red-500 font-bold uppercase rounded-xl">Reject</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="withdrawalModal" class="fixed inset-0 bg-black/98 backdrop-blur-2xl hidden z-[120] flex items-center justify-center p-4">
+  <div class="glass p-8 w-full max-w-md border-yellow-500/30">
+      <div class="flex justify-between items-center mb-6">
+          <h3 class="text-2xl font-bold text-yellow-500 uppercase tracking-tighter">Off-Ramp Vault</h3>
+          <button onclick="document.getElementById('withdrawalModal').classList.add('hidden')" class="text-slate-500 hover:text-white">✕</button>
+      </div>
+      <div class="space-y-4">
+          <div class="bg-white/5 p-4 rounded-xl border border-white/10">
+              <label class="text-[9px] uppercase text-cyan-400 block mb-1">Available for Payout</label>
+              <div id="withdrawableAmount" class="text-2xl font-bold text-white tracking-widest">KES 0.00</div>
+          </div>
+          <select id="payoutMethod" class="input-field w-full p-4 rounded-xl text-sm font-bold uppercase" onchange="togglePayoutFields()">
+              <option value="mobile_money">Mobile Money (MPESA)</option>
+              <option value="bank_transfer">Neural Bank Node</option>
+          </select>
+          <div id="mobileMoneyFields" class="space-y-4">
+              <input id="payoutPhone" type="tel" class="input-field w-full p-4 rounded-xl" placeholder="2547XXXXXXXX"/>
+          </div>
+          <div id="bankFields" class="hidden space-y-4">
+              <input id="accountNumber" class="input-field w-full p-4 rounded-xl" placeholder="Account Number"/>
+              <select id="bankCode" class="input-field w-full p-4 rounded-xl">
+                  <option value="044">KCB Bank</option>
+                  <option value="063">Equity Bank</option>
+                  <option value="011">Co-op Bank</option>
+              </select>
+          </div>
+          <button onclick="finalizeWithdrawal()" id="withdrawSubmitBtn" class="w-full py-5 bg-yellow-500 text-black font-black uppercase tracking-widest rounded-xl btn-glow mt-4">Initiate Payout</button>
+          <p class="text-[8px] text-center opacity-40 uppercase tracking-widest mt-4">Powered by Flutterwave Neural Rails</p>
+      </div>
+  </div>
+</div>
+<button id="fabButton" onclick="document.getElementById('fabModal').classList.remove('hidden')" class="fixed bottom-8 right-8 w-16 h-16 rounded-full bg-yellow-500 text-black text-3xl font-bold shadow-2xl flex items-center justify-center z-50 btn-glow hidden">+</button>
+<!-- MERCHANT DASHBOARD -->
+<div id="merchantDashboard" class="fixed inset-0 bg-black/95 backdrop-blur-2xl hidden z-[150] flex items-center justify-center p-4">
+  <div class="glass p-8 w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+    <div class="flex justify-between items-center mb-6 border-b border-white/10 pb-4">
+      <h3 class="text-2xl font-bold text-purple-400 uppercase tracking-widest">Merchant Redemption Terminal</h3>
+      <button onclick="toggleMerchantMode()" class="text-slate-400 hover:text-white text-2xl">✕</button>
+    </div>
+
+    <!-- Redemption Input -->
+    <div class="bg-black/40 p-6 rounded-2xl mb-6">
+      <h4 class="text-purple-300 uppercase text-sm mb-3">Redeem AFRO Code</h4>
+      <input id="merchantCodeInput" class="input-field w-full p-4 mb-4 text-lg font-mono" placeholder="AFRO-XXXXXX-YYYYYY"/>
+      <input id="merchantClaimAmount" type="number" step="0.01" class="input-field w-full p-4 mb-4" placeholder="Claim Amount (AFRO)"/>
+      <button onclick="redeemAsMerchant()" 
+              class="w-full py-5 bg-purple-500 hover:bg-purple-600 text-black font-black uppercase rounded-xl btn-glow">
+        REDEEM & CONFIRM
+      </button>
+    </div>
+
+    <!-- Redemption History -->
+    <div class="flex-1 overflow-auto">
+      <h4 class="text-purple-300 uppercase text-sm mb-3">Recent Redemptions</h4>
+      <div id="merchantHistory" class="space-y-3 text-sm font-mono"></div>
+    </div>
+
+    <div class="text-[10px] text-center opacity-40 mt-4">
+      Merchant Node: <span id="merchantNodeId" class="text-purple-400"></span>
+    </div>
+  </div>
+</div>
+<!-- FAB / MINT MODAL -->
+<div id="fabModal" class="fixed inset-0 bg-black/95 backdrop-blur-xl hidden z-50 flex items-center justify-center p-4">
+  <div class="glass p-10 w-full max-w-xl border-white/10">
+    <div class="flex justify-between items-center mb-6">
+      <h3 id="fabModalTitle" class="text-2xl font-bold text-yellow-400 uppercase tracking-tighter">Mint Global IP</h3>
+      <button onclick="closeFab()" class="text-slate-500 hover:text-white text-2xl">✕</button>
+    </div>
+    
+    <!-- Mode Switch -->
+    <div class="flex gap-2 mb-8 p-1 bg-white/5 rounded-xl">
+      <button onclick="setFabMode('ip')" id="fab-ip-btn"
+        class="flex-1 py-3 text-sm font-bold rounded-lg bg-yellow-500 text-black">IP Asset</button>
+      <button onclick="setFabMode('product')" id="fab-product-btn"
+        class="flex-1 py-3 text-sm font-bold rounded-lg text-slate-400">E-Commerce Product</button>
+    </div>
+
+    <!-- IP ASSET FORM -->
+ <div id="fab-ip-form">
+  <div class="flex gap-2 mb-6 p-1 bg-white/5 rounded-xl">
+    <button onclick="setMintType('file')" id="typeFile" class="flex-1 py-2 text-[10px] uppercase font-bold rounded-lg bg-yellow-500 text-black">
+      File Upload
+    </button>
+    <button onclick="setMintType('stream')" id="typeStream" class="flex-1 py-2 text-[10px] uppercase font-bold rounded-lg text-slate-400">
+      Livestream
+    </button>
+  </div>
+
+  <div class="space-y-5">
+    <input id="fabTitle" class="input-field w-full p-4 rounded-xl" placeholder="IP Asset Title"/>
+    
+    <div class="grid grid-cols-2 gap-4">
+      <input id="fabPrice" type="number" class="input-field w-full p-4 rounded-xl" placeholder="Price (KES)"/>
+      <input id="fabLimit" type="number" class="input-field w-full p-4 rounded-xl" placeholder="Supply (0=∞)"/>
+    </div>
+
+    <!-- MULTI-FILE UPLOAD ZONE -->
+    <div id="fileInputContainer" class="p-6 border-2 border-dashed border-white/10 rounded-2xl bg-white/5 text-center transition-all hover:border-cyan-500/40">
+      <input 
+        id="fabFile" 
+        type="file" 
+        class="hidden" 
+        multiple 
+        accept="*/*"
+        onchange="handleFilesSelected(this)"
+      />
+      
+      <label for="fabFile" id="fileLabel" class="cursor-pointer block">
+        <div class="text-slate-400 text-sm font-medium mb-1">
+          Drop files or click to select
+        </div>
+        <div class="text-[11px] text-slate-500">
+          Albums • Documents • Videos • Blueprints • Research (Max 50 files)
+        </div>
+      </label>
+
+      <!-- Selected files preview -->
+      <div id="selectedFilesList" class="mt-4 space-y-2 text-left hidden"></div>
+    </div>
+
+    <div id="streamInputContainer" class="hidden">
+      <input id="fabStreamUrl" class="input-field w-full p-4 rounded-xl" placeholder="https://youtube.com/live/..."/>
+    </div>
+
+    <div id="uploadStatus" style="opacity: 0;"></div>
+
+    <button id="mintBtn" onclick="publishContent()" class="relative btn-glow w-full py-5 rounded-xl bg-cyan-500 text-black font-extrabold uppercase text-sm tracking-widest">
+      <span id="btnText">STAMP & MONETIZE</span>
+      
+      <svg id="progressSvg" class="hidden animate-spin h-5 w-5 text-black inline-block ml-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+      </svg>
+    </button>
+  </div>
+</div>
+
+    <!-- E-COMMERCE PRODUCT FORM -->
+    <div id="fab-product-form" class="hidden space-y-5">
+      <input id="productName" class="input-field w-full p-4 rounded-xl" placeholder="Product Name (e.g. Wireless Earbuds)"/>
+      <textarea id="productDesc" rows="3" class="input-field w-full p-4 rounded-xl resize-y" placeholder="Brief description..."></textarea>
+      
+      <div class="grid grid-cols-2 gap-4">
+        <input id="productPrice" type="number" class="input-field w-full p-4 rounded-xl" placeholder="Price (KES)"/>
+        <input id="productStock" type="number" value="50" class="input-field w-full p-4 rounded-xl" placeholder="Stock Qty"/>
+      </div>
+
+      <!-- Multiple Images -->
+      <div class="p-6 border-2 border-dashed border-white/10 rounded-2xl bg-white/5 text-center">
+        <input id="productImages" type="file" accept="image/*" multiple class="hidden" onchange="updateProductImagesName()"/>
+        <label for="productImages" id="productImagesLabel" class="cursor-pointer text-sm text-slate-400 block font-medium">
+          Upload Product Images (Max 5)
+        </label>
+      </div>
+
+      <select id="productCategory" class="input-field w-full p-4 rounded-xl">
+        <option value="electronics">Electronics</option>
+        <option value="food">Food & Groceries</option>
+        <option value="fashion">Fashion & Beauty</option>
+        <option value="vehicles">Vehicles</option>
+        <option value="home">Home & Furniture</option>
+        <option value="other">Other</option>
+      </select>
+
+      <button onclick="publishProduct()" 
+        class="w-full py-5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold uppercase text-sm tracking-widest btn-glow">
+        LIST TO STORE
+      </button>
+    </div>
+  </div> 
+</div> <!-- fabModal ends HERE -->
+
+<!-- CID CERTIFICATE MODAL (STANDALONE) -->
+<div id="certModal" class="fixed inset-0 bg-black/95 backdrop-blur-2xl hidden z-50 flex items-center justify-center p-4">
+  <div id="certContent" class="glass p-8 w-full max-w-lg border-cyan-500/30 stamped-bg border-2 relative"></div>
+</div>
+
+<div id="watermark" class="fixed pointer-events-none opacity-[0.03] text-[8px] font-mono z-[1000] rotate-[-45deg] whitespace-nowrap hidden">
+    INFLUENSA_IP_SECURED_BY_AFROFUTURIST_PROTOCOL_NO_PIRACY_ALLOWED
+</div>
+
+<div id="afroSendModal" class="fixed inset-0 bg-black/95 backdrop-blur-2xl hidden z-[140] flex items-center justify-center p-4">
+  <div class="glass p-8 w-full max-w-md">
+    <h3 class="text-2xl font-bold text-cyan-400 mb-6">Send AFRO</h3>
+    <input id="recipientPhone" class="input-field w-full p-4 mb-4" placeholder="Recipient Phone (2547...)"/>
+    <input id="sendAfroAmount" type="number" step="0.01" class="input-field w-full p-4 mb-6" placeholder="Amount in AFRO"/>
+    <button onclick="sendAfroCoins()" class="w-full py-5 bg-cyan-500 text-black font-black uppercase rounded-xl btn-glow">CONFIRM TRANSFER</button>
+  </div>
+</div>
+
+
+<script>
+// --- FRONTEND SHIELD: PROTECT SOURCE & UI ---
+document.addEventListener('contextmenu', event => event.preventDefault());
+
+document.onkeydown = function(e) {
+    if(e.keyCode == 123 || (e.ctrlKey && e.shiftKey && (e.keyCode == 73 || e.keyCode == 74)) || (e.ctrlKey && e.keyCode == 85)) {
+        return false;
+    }
+    if(e.ctrlKey && (e.keyCode == 83 || e.keyCode == 80)) {
+        return false;
+    }
+};
+
+const API_URL = window.location.origin + '/api';
+
+let activeMintType = 'file'; 
+let searchTimeout;
+let allPosts = [];
+let currentNegotiation = null; 
+let pendingOffers = [];
+let analyticsVisible = false;
+let neuralMeshActive = true;
+let handshakeStatusCache = {}; 
+let selectedResellPostId = null; // INJECTED
+
+const SystemLog = (msg, type = 'info') => {
+    const timestamp = new Date().toLocaleTimeString();
+    console.log(`[${timestamp}] [${type.toUpperCase()}] iNFLUENSA: ${msg}`);
+};
+// === DYNAMIC CURRENCY ===
+let userCurrency = { code: 'KES', rate: 1 };
+
+async function loadRegionalContext(phone) {
+  try {
+    const res = await fetch(`${API_URL}/regional-context?phone=${encodeURIComponent(phone)}`);
+    const data = await res.json();
+    if (data.success && data.currency) {
+      userCurrency = data.currency;
+      console.log('💱 Regional currency set →', userCurrency);
+      // Re-render everything with the new currency
+      if (typeof fetchPosts === 'function') fetchPosts();
+      if (typeof updateWalletUI === 'function') updateWalletUI();
+    }
+  } catch (e) {
+    console.warn('Could not load regional context, staying on KES');
+  }
+}
+
+function formatPrice(amountInKES) {
+  if (!amountInKES && amountInKES !== 0) return `${userCurrency.code} 0`;
+  const local = Number(amountInKES) * (userCurrency.rate || 1);
+  // Show 0 decimals for whole numbers, 2 for others
+  const formatted = local % 1 === 0 ? local.toFixed(0) : local.toFixed(2);
+  return `${userCurrency.code} ${formatted}`;
+}
+window.onload = () => {
+    const text = "iNFLUENSA";
+    const container = document.getElementById('launchText');
+    text.split('').forEach((char, i) => {
+        const span = document.createElement('span');
+        span.innerText = char;
+        span.className = 'launch-letter';
+        container.appendChild(span);
+        setTimeout(() => span.classList.add('active'), i * 150);
+    });
+    setTimeout(() => { document.getElementById('launchSub').style.opacity = '1'; }, text.length * 150 + 500);
+    setTimeout(() => {
+        document.getElementById('cinematicLaunch').style.display = 'none';
+        document.body.classList.remove('overflow-hidden');
+        const savedPhone = localStorage.getItem('iNFLUENSA_NODE');
+        if (savedPhone) {
+            document.getElementById("phoneInput").value = savedPhone;
+            initializeGrid();
+        } else {
+            document.getElementById('initOverlay').classList.remove('hidden');
+        }
+    }, text.length * 150 + 3000);
+    
+    const wm = document.getElementById('watermark');
+    wm.innerText = (wm.innerText + " ").repeat(200);
+};
+
+
+
+// ==========================================
+// CORE SOURCE CODE FUNCTIONS (PRESERVED LOGIC)
+// ==========================================
+
+async function initializeGrid() {
+  // Safe extraction to prevent unhandled script breaks if input is missing
+  const phoneInputEl = document.getElementById("phoneInput");
+  if (!phoneInputEl) return console.warn("Initialization aborted: 'phoneInput' element missing.");
+  
+  let phone = phoneInputEl.value.trim();
+  if(phone.startsWith('0')) phone = '254' + phone.substring(1);
+  if(!phone || phone.length < 12) return alert("Identity Error: Use 2547XXXXXXXX");
+  
+  localStorage.setItem('iNFLUENSA_NODE', phone);
+  
+  const langSelectEl = document.getElementById('langSelect');
+  currentUser = { identity: phone, lang: langSelectEl ? langSelectEl.value : 'en' };
+
+  try {
+    const res = await fetch(`${API_URL}/nodes/connect`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identity: phone })
+    });
+    const data = await res.json();
+    const protocolUsersEl = document.getElementById("protocolUsers");
+    if (protocolUsersEl) protocolUsersEl.innerText = `${data.nodeCount || '1'} NODES ACTIVE`;
+  } catch(e) { 
+    const protocolUsersEl = document.getElementById("protocolUsers");
+    if (protocolUsersEl) protocolUsersEl.innerText = "OFFLINE MESH ACTIVE";
+  }
+await loadRegionalContext(phone);
+  // Element protection wrappers preserving your visibility toggle lines
+  const initOverlayEl = document.getElementById("initOverlay");
+  if (initOverlayEl) initOverlayEl.style.display = "none";
+  
+  const fabButtonEl = document.getElementById("fabButton");
+  if (fabButtonEl) fabButtonEl.classList.remove("hidden");
+  
+  const watermarkEl = document.getElementById("watermark");
+  if (watermarkEl) watermarkEl.classList.remove("hidden");
+  
+  // === FIXED WALLET SYNC (This is the important part) ===
+  console.log("🔄 Running initial wallet sync...");
+  if (typeof updateWalletUI === "function") {
+      await updateWalletUI();                    // Immediate first update
+  }
+  
+  // Running your other lifecycle sequencers
+  if (typeof fetchPosts === "function") fetchPosts();
+  if (typeof fetchGlobalStats === "function") fetchGlobalStats();
+  if (typeof startGlobalPulse === "function") startGlobalPulse();
+  if (typeof startNotificationListener === "function") startNotificationListener(); 
+  simulateLatency();
+  
+  // Engine Intervals
+  if (typeof updateWalletUI === "function") {
+      setInterval(updateWalletUI, 5000);         // Real-time updates
+  }
+  if (typeof fetchGlobalStats === "function") setInterval(fetchGlobalStats, 10000); 
+  setInterval(simulateLatency, 3000);
+  
+  if (typeof showToast === "function") showToast("Neural Mesh Connected Successfully");
+}
+
+function toggleAnalytics() {
+    analyticsVisible = !analyticsVisible;
+    const sidebar = document.getElementById('analyticsSidebar');
+    const mainFeed = document.getElementById('mainFeedSection');
+    
+    if(!sidebar || !mainFeed) return; // Guard rails against layout mutation mismatches
+    
+    if(analyticsVisible) {
+        sidebar.classList.remove('hidden');
+        mainFeed.classList.replace('lg:col-span-12', 'lg:col-span-9');
+    } else {
+        sidebar.classList.add('hidden');
+        mainFeed.classList.replace('lg:col-span-9', 'lg:col-span-12');
+    }
+}
+
+function simulateLatency() {
+    const latencyDisplayEl = document.getElementById('latencyDisplay');
+    const blockHeightEl = document.getElementById('blockHeight');
+    
+    if (latencyDisplayEl) {
+        const ms = Math.floor(Math.random() * 45) + 12;
+        latencyDisplayEl.innerText = `Latency: ${ms}ms`;
+    }
+    if (blockHeightEl) {
+        const height = 882109 + Math.floor(Date.now() / 1000000);
+        blockHeightEl.innerText = `Block: #${height}`;
+    }
+}
+
+function initSignature() {
+    canvas = document.getElementById('sig-canvas');
+    if (!canvas) return;
+    ctx = canvas.getContext('2d');
+    ctx.strokeStyle = '#facc15';
+    ctx.lineWidth = 3;
+    const getPos = (e) => {
+        const rect = canvas.getBoundingClientRect();
+        return { x: (e.clientX || (e.touches ? e.touches[0].clientX : 0)) - rect.left, 
+                 y: (e.clientY || (e.touches ? e.touches[0].clientY : 0)) - rect.top };
+    };
+    const start = (e) => { drawing = true; const p = getPos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); };
+    const draw = (e) => { if(!drawing) return; const p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); updateAgreementHash(); };
+    const stop = () => drawing = false;
+    canvas.addEventListener('mousedown', start); canvas.addEventListener('mousemove', draw); window.addEventListener('mouseup', stop);
+    canvas.addEventListener('touchstart', start); canvas.addEventListener('touchmove', (e)=> { e.preventDefault(); draw(e); }); window.addEventListener('touchend', stop);
+}
+
+function updateAgreementHash() {
+    if (!canvas) return;
+    const sigData = canvas.toDataURL();
+    const hash = btoa(sigData).substring(50, 66);
+    const agreementHashEl = document.getElementById('agreementHash');
+    if (agreementHashEl) agreementHashEl.innerText = `ID_SHA256: ${hash}`;
+}
+
+function hydrateWalletUI(userModel) {
+    const nodeIDEl = document.getElementById("nodeID");
+    if (!nodeIDEl) return; // Prevents crashing if UI isn't fully rendered
+
+    // Force identity to string or fallback gracefully to avoid "NODE_INED"
+    const identityStr = userModel && userModel.identity ? String(userModel.identity) : "0000";
+    
+    // Inject node identification stamp safely
+    nodeIDEl.innerText = `NODE_${identityStr.slice(-4).toUpperCase()}`;
+    
+    // Inject live balance valuations safely converting numbers
+    const afroCoins = userModel ? (Number(userModel.afroCoins) || 0) : 0;
+    const earnings = userModel ? (Number(userModel.earnings) || 0) : 0;
+
+    const afroCoinsDisplayEl = document.getElementById("afroCoinsDisplay");
+    if (afroCoinsDisplayEl) {
+        afroCoinsDisplayEl.innerHTML = `💱 ${afroCoins.toFixed(2)} AFRO`;
+    }
+    
+    const earningsDisplayEl = document.getElementById("earningsDisplay");
+    if (earningsDisplayEl) {
+        earningsDisplayEl.innerText = `KES ${earnings.toFixed(2)}`;
+    }
+}
+
+
+// 2. This fetches live ledger data using the exact same API path format as initializeGrid
+async function synchronizeActiveNode(phone) {
+    try {
+        // Ensure this points to the exact path your backend router listens to (e.g., /api/nodes/connect)
+        const response = await fetch(`${API_URL}/nodes/connect`, { 
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ identity: phone })
+        });
+        
+        const data = await response.json();
+        console.log("Grid Response Payload:", data); // <-- DIAGNOSTIC 1
+
+        // Check if data itself has the user, or if it's nested deep
+        const userPayload = data.user || data; 
+        console.log("Extracted User Payload:", userPayload); // <-- DIAGNOSTIC 2
+        
+        if (userPayload) {
+            hydrateWalletUI(userPayload);
+            
+            if (typeof socket !== 'undefined') {
+                socket.off('payment_success');
+                socket.on('payment_success', (payload) => {
+                    synchronizeActiveNode(phone);
+                });
+            }
+        }
+    } catch (err) {
+        console.error("🚨 Network disconnect on node synchronization profile:", err);
+        document.getElementById("nodeID").innerText = "GRID BOUNDS ERROR";
+    }
+}
+
+
+
+
+function openHandshake(postId, title) {
+    currentNegotiation = { postId, title, isCreatorView: false };
+    document.getElementById('hsModalTitle').innerText = "Initiate Handshake";
+    document.getElementById('collabTitle').innerText = title;
+    document.getElementById('hsListMode').classList.add('hidden');
+    document.getElementById('hsNegotiateMode').classList.remove('hidden');
+    document.getElementById('mainHsBtn').classList.remove('hidden');
+    document.getElementById('creatorResponseBtns').classList.add('hidden');
+    document.getElementById('signatureArea').classList.remove('hidden');
+    document.getElementById('signatureReviewArea').classList.add('hidden');
+    document.getElementById('handshakeModal').classList.remove('hidden');
+    
+    setTimeout(() => {
+        initSignature();
+        if(ctx) ctx.clearRect(0,0, canvas.width, canvas.height);
+    }, 100);
+}
+
+async function finalizeHandshake() {
+    const split = document.getElementById('splitInput').value;
+    const signature = canvas.toDataURL();
+    const contractHash = document.getElementById('agreementHash').innerText;
+
+    try {
+        const res = await fetch(`${API_URL}/handshake/offer`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                postId: currentNegotiation.postId, 
+                sender: currentUser.identity, 
+                split, signature, contractHash 
+            })
+        });
+        if(res.ok) { showToast("Neural Offer Dispatched."); closeHandshake(); }
+    } catch(e) { showToast("Mesh Failure."); }
+}
+
+async function viewActiveHandshakes() {
+    try {
+        const res = await fetch(`${API_URL}/handshake/pending/${currentUser.identity}`);
+        const data = await res.json();
+        pendingOffers = data || [];
+        
+        document.getElementById('hsModalTitle').innerText = "Active Contracts";
+        document.getElementById('hsListMode').classList.remove('hidden');
+        document.getElementById('hsNegotiateMode').classList.add('hidden');
+        document.getElementById('handshakeModal').classList.remove('hidden');
+        
+        const list = document.getElementById('hsListMode');
+        if (pendingOffers.length === 0) {
+            list.innerHTML = `<p class="text-center opacity-40 py-10">NO PENDING AGREEMENTS</p>`;
+        } else {
+            list.innerHTML = pendingOffers.map(h => `
+                <div onclick="openNegotiationLoop('${h._id}')" class="p-5 glass border-white/10 hover:border-yellow-500/50 cursor-pointer flex justify-between items-center group">
+                    <div>
+                        <div class="text-[10px] text-cyan-400 font-bold uppercase">OFFER_FROM: ${h.sender}</div>
+                        <div class="text-xl font-bold">${h.split}% REVENUE SPLIT</div>
+                        <div class="text-[8px] uppercase tracking-widest text-slate-500">Status: ${h.status || 'PENDING'}</div>
+                    </div>
+                    <div class="text-yellow-500 group-hover:translate-x-1 transition-all">REVIEW →</div>
+                </div>
+            `).join('');
+        }
+    } catch(e) { showToast("Fetch Error"); }
+}
+let selectedFiles = []; // store the actual File objects
+
+function handleFilesSelected(input) {
+  const files = Array.from(input.files);
+  if (files.length === 0) return;
+
+  // Optional: enforce a max
+  if (files.length > 50) {
+    alert("Maximum 50 files allowed");
+    return;
+  }
+
+  selectedFiles = files;
+  renderSelectedFiles();
+}
+
+function renderSelectedFiles() {
+  const list = document.getElementById('selectedFilesList');
+  const label = document.getElementById('fileLabel');
+
+  if (selectedFiles.length === 0) {
+    list.classList.add('hidden');
+    label.classList.remove('hidden');
+    return;
+  }
+
+  label.classList.add('hidden');
+  list.classList.remove('hidden');
+
+  list.innerHTML = selectedFiles.map((file, index) => {
+    const size = (file.size / 1024 / 1024).toFixed(1);
+    return `
+      <div class="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2 text-xs">
+        <div class="truncate pr-3">
+          <span class="text-cyan-400 font-medium">${file.name}</span>
+          <span class="text-slate-500 ml-2">${size} MB</span>
+        </div>
+        <button onclick="removeFile(${index})" class="text-red-400 hover:text-red-300 text-lg leading-none">×</button>
+      </div>
+    `;
+  }).join('');
+}
+
+function removeFile(index) {
+  selectedFiles.splice(index, 1);
+  
+  // Also update the real input so FormData stays in sync
+  const dt = new DataTransfer();
+  selectedFiles.forEach(f => dt.items.add(f));
+  document.getElementById('fabFile').files = dt.files;
+
+  renderSelectedFiles();
+}
+
+// Clear everything after successful mint
+function clearFileSelection() {
+  selectedFiles = [];
+  document.getElementById('fabFile').value = '';
+  renderSelectedFiles();
+}
+async function openNegotiationLoop(handshakeId) {
+    const hs = pendingOffers.find(x => x._id === handshakeId);
+    if(!hs) return;
+    currentNegotiation = hs;
+    document.getElementById('hsModalTitle').innerText = "Process Contract";
+    document.getElementById('splitInput').value = hs.split;
+    document.getElementById('agreementHash').innerText = hs.contractHash;
+    document.getElementById('sig-review-img').src = hs.signature;
+    document.getElementById('hsListMode').classList.add('hidden');
+    document.getElementById('hsNegotiateMode').classList.remove('hidden');
+    document.getElementById('mainHsBtn').classList.add('hidden');
+    document.getElementById('creatorResponseBtns').classList.remove('hidden');
+    document.getElementById('signatureArea').classList.add('hidden'); 
+    document.getElementById('signatureReviewArea').classList.remove('hidden');
+}
+
+async function respondToHandshake(action) {
+    const endpoint = action === 'accept' ? 'accept' : (action === 'negotiate' ? 'counter' : 'reject');
+    const payload = action === 'negotiate' ? { split: document.getElementById('splitInput').value } : {};
+    
+    try {
+        const res = await fetch(`${API_URL}/handshake/${endpoint}/${currentNegotiation._id}`, { 
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if(res.ok) { 
+            showToast(`Contract ${action}ed.`); 
+            closeHandshake(); 
+            fetchPosts(); 
+        }
+    } catch(e) { showToast("Sync failure."); }
+}
+
+// --- DEBUNKING AND TRAFFIC INSPECTION UTILITY ---
+function clientCleanPhone(phone) {
+    if (!phone) return "";
+    let cleaned = phone.toString().replace(/\D/g, ''); 
+    if (cleaned.startsWith('0')) cleaned = '254' + cleaned.substring(1);
+    return cleaned; 
+}
+
+async function fetchPosts() {
+    try {
+        const res = await fetch(`${API_URL}/posts`);
+        allPosts = await res.json();
+        render(allPosts);
+    } catch (e) { SystemLog("Feed Sync Error", "error"); }
+}
+
+function render(posts) {
+  const container = document.getElementById("feedContainer");
+  if (!container) return;
+
+  if (!posts || posts.length === 0) {
+    container.innerHTML = `<div class="col-span-full py-20 text-center opacity-40 uppercase tracking-[0.4em] text-xs">Zero Matches in Neural Mesh</div>`;
+    return;
+  }
+
+  // Helper to safely escape strings for inline onclick attributes
+  const escapeAttr = (str) => (str || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+
+  // Normalize current user string formatting
+  const activeUserNode = clientCleanPhone(currentUser?.identity);
+
+  container.innerHTML = posts.map(p => {
+    // Standard flat array formatting
+    const unlockedArray = p.unlocked_by || [];
+    const licensedArray = p.licensed_to || [];
+    
+    // Core structural permission variables
+    const isOwner = clientCleanPhone(p.owner) === activeUserNode;
+    const isUnlocked = unlockedArray.map(n => clientCleanPhone(n)).includes(activeUserNode) || isOwner;
+    const isLicensed = licensedArray.map(n => clientCleanPhone(n)).includes(activeUserNode);
+    
+    // Diagnostic logging
+    console.log(`============= FEED AUDIT FOR POST: ${p.title} (${p._id}) =============`);
+    console.log(` 👤 Active User Identity: "${activeUserNode}"`);
+    console.log(` 🔑 Asset Owner Identity: "${p.owner}"`);
+    console.log(` 📊 RESOLUTION -> IsOwner: ${isOwner} | IsUnlocked: ${isUnlocked} | IsLicensed: ${isLicensed}`);
+    console.log(`====================================================================`);
+
+    const isAudio = p.mime?.includes('audio');
+    const canResell = isUnlocked && !isOwner;
+    const safeTitle = escapeAttr(p.title);
+
+    return `
+      <div id="post-${p._id}" class="glass overflow-hidden ${isUnlocked || isLicensed ? 'border-cyan-500/40' : 'border-white/5'} flex flex-col group transition-all h-full relative">
+        <div class="h-64 bg-black relative flex items-center justify-center overflow-hidden">
+          ${(isUnlocked || isLicensed) ? renderFullMedia(p) : renderTeaserMedia(p, isAudio)}
+          <div class="anti-piracy-overlay absolute inset-0 opacity-20"></div>
+          
+          ${p.scarcity_limit > 0 ? `<div class="absolute top-4 right-4 z-20 px-3 py-1 bg-red-500 text-white text-[8px] font-black uppercase rounded-full">Ltd: ${p.scarcity_limit - (p.unlocked_by?.length || 0)} Left</div>` : ''}
+          
+          <div class="absolute top-4 left-4 flex gap-2 z-20">
+             <button onclick="openHandshake('${p._id}', '${safeTitle}')" class="w-10 h-10 rounded-full glass border border-yellow-500/30 flex items-center justify-center handshake-shake text-xl"><span>🤝</span></button>
+             <button onclick="shareAndDownload('${p._id}', ${p.price})" class="w-10 h-10 rounded-full glass border border-cyan-500/30 flex items-center justify-center text-xl">🔗</button>
+          </div>
+          
+          ${p.is_resell ? `<div class="absolute top-4 right-4 z-20 px-2.5 py-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[8px] font-mono tracking-widest uppercase rounded-full">Resell Node</div>` : ''}
+          
+          ${!(isUnlocked || isLicensed) ? `
+            <div class="absolute inset-0 bg-gradient-to-t from-[#0a0e1f] via-transparent flex flex-col items-center justify-end p-6">
+                <button id="unlock-btn-${p._id}" 
+                        onclick="unlockIP('${p._id}')" 
+                        class="bg-yellow-500 text-black w-full py-3 rounded-xl font-black text-[11px] uppercase btn-glow mb-2">
+                    Unlock • ${currentUser && currentUser.identity?.startsWith('1') ? 'Apple Pay / Card' : 'M-PESA'}
+                </button>
+            </div>` : `
+            <div class="absolute bottom-2 right-2 flex gap-2 z-20">
+                ${canResell ? `<button onclick="openResellModal('${p._id}', '${safeTitle}')" class="bg-cyan-500/20 text-cyan-400 border border-cyan-500/50 px-3 py-2 rounded-lg font-bold text-[9px] uppercase hover:bg-cyan-500 hover:text-black transition-all">🔄 Resell</button>` : ''}
+                ${isOwner ? `<button onclick="burnIP('${p._id}')" class="bg-red-500/20 text-red-500 border border-red-500/50 px-4 py-2 rounded-lg font-bold text-[9px] uppercase hover:bg-red-500 hover:text-white transition-all">Burn IP</button>` : ''}
+            </div>
+          `}
+        </div>
+        <div class="p-6">
+          <div class="flex justify-between items-start">
+            <h4 class="text-xl font-bold lowercase truncate w-2/3">${p.title || 'Untitled'}</h4>
+            <button onclick="viewCID('${p._id}')" class="text-[8px] font-mono text-cyan-500 bg-cyan-500/10 px-2 py-1 rounded">CID_AUDIT</button>
+          </div>
+          <div class="flex justify-between items-center mt-4">
+            <span class="text-[9px] text-slate-500 uppercase">${p.is_resell ? `Root: ...${(p.original_creator || '').slice(-4)}` : `Node: ...${(p.owner || '').slice(-4)}`}</span>
+        <span class="text-yellow-500 font-bold uppercase text-[12px]">${formatPrice(p.price || 0)}</span>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+
+function renderTeaserMedia(p, isAudio) {
+    if (isAudio) return `<div class="flex items-end gap-1 h-12"><div class="audio-bar"></div><div class="audio-bar" style="animation-delay:0.2s"></div><div class="audio-bar" style="animation-delay:0.4s"></div></div>`;
+    return `<div class="stamped-bg w-full h-full opacity-10 flex items-center justify-center text-[10px] font-bold">ENCRYPTED_DATA</div>`;
+}
+
+/* MODIFIED: Secure Watermarked Rendering Logic */
+function renderFullMedia(p) {
+    const secureUrl = `${API_URL}/api/media/${p._id}?phone=${currentUser.identity}`;
+    
+    if(p.is_stream) {
+        return `<iframe src="${p.stream_url}" class="w-full h-full" allow="autoplay; encrypted-media"></iframe>`;
+    }
+    
+    if(p.mime?.includes('video')) {
+        return `<video src="${secureUrl}" controls controlsList="nodownload" class="w-full h-full object-cover"></video>`;
+    }
+    
+    if(p.mime?.includes('audio')) {
+        return `
+        <div class="flex flex-col items-center justify-center h-full w-full bg-slate-900/50 p-4">
+            <div class="flex gap-1 mb-4">
+                <div class="audio-bar"></div><div class="audio-bar"></div><div class="audio-bar"></div>
+            </div>
+            <audio src="${secureUrl}" controls controlsList="nodownload" class="w-full"></audio>
+        </div>`;
+    }
+
+    return `<img src="${secureUrl}" class="w-full h-full object-cover">`;
+}
+
+/**
+ * Triggers the IP Asset Purchase workflow, registers checkout telemetry,
+ * and handles real-time verification polling.
+ * * @param {string} postId - The target MongoDB document identification hash.
+ * @param {string} type   - Access permutation classification ('unlock' or 'license').
+ */
+// ==================== PRODUCTION PAYMENT HANDLERS ====================
+
+// Call this once early (page load or when user logs in)
+let userCountry = null;
+
+async function getUserCountry() {
+  if (userCountry) return userCountry;
+
+  try {
+    // Preferred: your own backend
+    const res = await fetch(`${API_URL}/geo`);
+    const data = await res.json();
+    userCountry = data.country_code || 'KE';
+  } catch (e) {
+    // Fallback (only if you have no /geo endpoint)
+    try {
+      const res = await fetch('https://ipapi.co/json/');
+      const data = await res.json();
+      userCountry = data.country_code || 'KE';
+    } catch {
+      userCountry = 'KE'; // safe default
+    }
+  }
+  return userCountry;
+}
+
+// Helper
+function isEastAfrica(country) {
+  const ea = ['KE', 'TZ', 'UG', 'RW', 'BI', 'SS', 'ET'];
+  return ea.includes(country);
+}
+
+async function unlockIP(postId, type = 'unlock') {
+  const btn = document.getElementById(`unlock-btn-${postId}`);
+  const originalText = btn ? btn.innerText : "Unlock";
+
+  if (btn) {
+    btn.innerText = "PROCESSING...";
+    btn.classList.add('processing-payout');
+    btn.disabled = true;
+  }
+
+  try {
+    const country = await getUserCountry();
+    const useMpesa = isEastAfrica(country);
+
+    if (useMpesa) {
+      showToast("🔄 Initiating M-PESA STK Push...");
+    } else {
+      showToast("🔄 Opening Secure Stripe Checkout...");
+    }
+
+    const res = await fetch(`${API_URL}/posts/${postId}/unlock`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        phone: currentUser.identity,   // still send phone for M-PESA
+        type,
+        country                        // ← important: let backend know
+      })
+    });
+
+    const data = await res.json();
+
+    if (!data.checkoutID && !data.clientSecret) {
+      throw new Error(data.error || data.message || "Gateway Error");
+    }
+
+    if (useMpesa) {
+      // M-PESA Flow
+      showToast("STK Push Sent. Enter PIN on your phone.");
+      startPaymentPolling(data.checkoutID, btn, originalText);
+    } else {
+      // Stripe (or Flutterwave) Flow
+      if (data.clientSecret) {
+        await handleStripePayment(data.clientSecret, postId, btn, originalText);
+      } else if (data.payment_link) {
+        // Flutterwave / redirect style
+        window.location.href = data.payment_link;
+      } else {
+        throw new Error("No payment credentials received");
+      }
+    }
+
+  } catch (e) {
+    console.error("🚨 unlockIP failed:", e);
+    showToast("Payment Error: " + (e.message || "Please try again"));
+    resetUnlockBtn(btn, originalText);
+  }
+}
+// PRODUCTION STRIPE HANDLER
+// Initialize Stripe once globally
+const stripe = Stripe('pk_test_51Tt3pV2LwLBaYhVtTc7SA7LSYbvbdyy3eYZMjBNbPoGVl6NLddldDucFXq7HefnDpUXT0kx1jJoOEuzJSOvpMrt200Igsz4c47');
+
+// Helper to close modal
+function closeStripeModal() {
+    const modal = document.getElementById('stripe-modal');
+    if (modal) modal.remove();
+}
+
+// Opens modal and renders Payment Element
+async function handleStripePayment(clientSecret, postId) {
+    closeStripeModal(); // Prevent duplicate modals
+
+    const modalHTML = `
+        <div id="stripe-modal" class="fixed inset-0 bg-black/95 backdrop-blur-2xl flex items-center justify-center z-[200]">
+            <div class="glass p-8 w-full max-w-lg rounded-3xl relative">
+                <button onclick="closeStripeModal()" class="absolute top-4 right-4 text-slate-400 hover:text-white text-xl">✕</button>
+                
+                <h3 class="text-2xl font-bold text-yellow-400 mb-6">Complete Payment</h3>
+                <div id="payment-element" class="mb-6"></div>
+                
+                <button id="pay-btn" class="w-full py-5 bg-yellow-500 hover:bg-yellow-400 text-black font-black uppercase rounded-2xl transition-all">
+                    Pay Now
+                </button>
+                
+                <p class="text-center text-slate-400 text-sm mt-4">Secured by Stripe • Powered by iNFLUENSA</p>
+            </div>
+        </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+
+    const elements = stripe.elements({ 
+        appearance: { theme: 'night' },
+        clientSecret 
+    });
+
+    const paymentElement = elements.create('payment', { 
+        layout: 'tabs',
+        defaultValues: {
+            billingDetails: { phone: typeof currentUser !== 'undefined' ? currentUser?.identity : '' }
+        }
+    });
+
+    paymentElement.mount('#payment-element');
+
+    const payBtn = document.getElementById('pay-btn');
+
+    payBtn.addEventListener('click', async () => {
+        payBtn.disabled = true;
+        payBtn.innerText = "Processing...";
+
+        try {
+            const { error, paymentIntent } = await stripe.confirmPayment({
+                elements,
+                confirmParams: {
+                    return_url: window.location.href // Required for 3DS authentication
+                },
+                redirect: 'if_required'
+            });
+
+            if (error) {
+                if (typeof showToast === 'function') showToast("Payment failed: " + error.message, "error");
+                else alert("Payment failed: " + error.message);
+            } else if (paymentIntent?.status === "succeeded") {
+                if (typeof showToast === 'function') showToast("✅ Payment Successful!", "success");
+                closeStripeModal();
+                
+                if (typeof socket !== "undefined" && socket) {
+                    socket.emit('join_payment_room', paymentIntent.id);
+                }
+                
+                if (typeof fetchPosts === "function") await fetchPosts();
+            }
+        } catch (err) {
+            if (typeof showToast === 'function') showToast("Payment error occurred", "error");
+        } finally {
+            payBtn.disabled = false;
+            payBtn.innerText = "Pay Now";
+        }
+    });
+}
+
+// Initiates payment backend request & opens modal
+async function handleUnlockPost(postId, sellerPhone) {
+    try {
+        const response = await fetch('/api/payments/trigger', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                phone: typeof currentUserPhone !== 'undefined' ? currentUserPhone : '',
+                recipientPhone: sellerPhone,
+                amountInKES: 1000,
+                postId: postId,
+                type: 'unlock'
+            })
+        });
+        
+        const data = await response.json();
+
+        if (!data.success || !data.clientSecret) {
+            alert("Payment initiation failed");
+            return;
+        }
+
+        // Pass clientSecret to modal renderer
+        await handleStripePayment(data.clientSecret, postId);
+
+    } catch (err) {
+        console.error("Unlock Error:", err);
+        alert("Failed to initiate unlock.");
+    }
+}
+
+// Route: /payouts/claim
+async function handleClaimPayouts(countryCode = 'US') {
+    const urlParams = new URLSearchParams(window.location.search);
+    const sellerPhone = urlParams.get('phone');
+    const sellerCountry = urlParams.get('country') || countryCode; // e.g. ?phone=+254712345678&country=KE
+
+    if (!sellerPhone) {
+        alert("Missing phone number parameter.");
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/payouts/create-onboarding-link', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                phone: sellerPhone,
+                countryCode: sellerCountry 
+            })
+        });
+
+        const data = await response.json();
+
+        if (data && data.url) {
+            window.location.href = data.url;
+        } else {
+            alert("Could not generate onboarding link. " + (data.error || "Try again."));
+        }
+    } catch (err) {
+        console.error("Payout Claim Error:", err);
+        alert("Error generating payout link.");
+    }
+}
+
+// M-PESA POLLING
+function startPaymentPolling(checkoutID, btn, originalText) {
+  let attempts = 0;
+  const poll = setInterval(async () => {
+    attempts++;
+    try {
+      const sRes = await fetch(`${API_URL}/stk-status/${checkoutID}`);
+      const s = await sRes.json();
+      const status = (s.status || '').toString().toLowerCase().trim();
+
+      if (status === 'completed' || status === 'success') {
+        clearInterval(poll);
+        showToast("🔓 Asset Unlocked Successfully!");
+        await fetchPosts();
+        resetUnlockBtn(btn, originalText);
+      } else if (status === 'failed' || status === 'cancelled') {
+        clearInterval(poll);
+        showToast("❌ Payment Failed.");
+        resetUnlockBtn(btn, originalText);
+      }
+    } catch (e) {}
+
+    if (attempts > 30) {
+      clearInterval(poll);
+      showToast("⌛ Verification Timeout.");
+      resetUnlockBtn(btn, "RETRY UNLOCK");
+    }
+  }, 3000);
+}
+
+function closeStripeModal() {
+  const modal = document.getElementById('stripe-modal');
+  if (modal) modal.remove();
+}
+ 
+function resetUnlockBtn(btn, text) {
+    if (!btn) return;
+    btn.classList.remove('processing-payout');
+    btn.innerText = text;
+    btn.disabled = false;
+}
+
+async function publishContent() {
+  const btn = document.getElementById("mintBtn");
+  const progressCircle = document.getElementById("progressCircle");
+  const uploadStatus = document.getElementById("uploadStatus");
+  const title = document.getElementById("fabTitle").value.trim();
+  const price = document.getElementById("fabPrice").value;
+  const scarcity_limit = document.getElementById("fabLimit").value;
+
+  if (!title || !price) {
+    return alert("Title and Price are required.");
+  }
+
+  btn.disabled = true;
+
+  if (uploadStatus) {
+    uploadStatus.style.opacity = "1";
+    uploadStatus.innerText = "Neural Verification in progress...";
+  }
+
+  if (activeMintType === 'file') {
+    // Support both the new multi-file system and the old single-file input
+    const fileInput = document.getElementById("fabFile");
+    const files = selectedFiles && selectedFiles.length > 0
+      ? selectedFiles
+      : Array.from(fileInput.files);
+
+    if (!files || files.length === 0) {
+      resetMintUI();
+      return alert("No file selected.");
+    }
+
+    const formData = new FormData();
+    formData.append("title", title);
+    formData.append("price", price);
+    formData.append("scarcity_limit", scarcity_limit || 0);
+    formData.append("owner", currentUser.identity);
+
+    // Append ALL files under the field name "files"
+    files.forEach(file => {
+      formData.append("files", file);
+    });
+
+    document.getElementById("progressSvg").classList.remove("hidden");
+
+    const xhr = new XMLHttpRequest();
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && progressCircle) {
+        const p = (e.loaded / e.total) * 100;
+        progressCircle.style.strokeDashoffset = 75.39 - (p / 100 * 75.39);
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status === 201) {
+        showToast(`Asset Stamped (${files.length} file${files.length > 1 ? 's' : ''}).`);
+        // Clear the multi-file selection if you are using the selectedFiles array
+        if (typeof clearFileSelection === 'function') clearFileSelection();
+        fetchPosts();
+        closeFab();
+      } else {
+        let msg = "File Sync Failed.";
+        try {
+          const err = JSON.parse(xhr.responseText);
+          msg = err.message || err.error || msg;
+        } catch (_) {}
+        alert(msg);
+        resetMintUI();
+      }
+    };
+
+    xhr.onerror = () => {
+      alert("Mesh Network Error.");
+      resetMintUI();
+    };
+
+    xhr.open("POST", `${API_URL}/posts`);
+    xhr.send(formData);
+
+  } else {
+    // === Livestream path (unchanged) ===
+    const stream_url = document.getElementById("fabStreamUrl").value.trim();
+    if (!stream_url) {
+      resetMintUI();
+      return alert("Stream URL Required.");
+    }
+
+    try {
+      const res = await fetch(`${API_URL}/posts/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title,
+          price,
+          scarcity_limit: scarcity_limit || 0,
+          owner: currentUser.identity,
+          stream_url
+        })
+      });
+
+      if (res.ok) {
+        showToast(`Stream Registered.`);
+        fetchPosts();
+        closeFab();
+      } else {
+        alert("Stream Sync Failed.");
+        resetMintUI();
+      }
+    } catch (e) {
+      alert("Mesh Network Error.");
+      resetMintUI();
+    }
+  }
+}
+
+// ==================== FAB MODAL ENHANCED ====================
+let currentFabMode = 'ip';
+
+function setFabMode(mode) {
+    currentFabMode = mode;
+    
+    // Update title
+    document.getElementById('fabModalTitle').textContent = 
+        mode === 'ip' ? "Mint Global IP" : "List New Product";
+    
+    // Toggle forms
+    document.getElementById('fab-ip-form').classList.toggle('hidden', mode !== 'ip');
+    document.getElementById('fab-product-form').classList.toggle('hidden', mode !== 'product');
+    
+    // Style buttons
+    const ipBtn = document.getElementById('fab-ip-btn');
+    const productBtn = document.getElementById('fab-product-btn');
+    
+    if (ipBtn && productBtn) {
+        ipBtn.classList.toggle('bg-yellow-500', mode === 'ip');
+        ipBtn.classList.toggle('text-black', mode === 'ip');
+        ipBtn.classList.toggle('text-slate-400', mode !== 'ip');
+        
+        productBtn.classList.toggle('bg-yellow-500', mode === 'product');
+        productBtn.classList.toggle('text-black', mode === 'product');
+        productBtn.classList.toggle('text-slate-400', mode !== 'ip');
+    }
+}
+
+function updateProductImageName() {
+    const file = document.getElementById("productImage").files[0];
+    const label = document.getElementById("productImageLabel");
+    if (label) label.innerText = file ? file.name : "Upload Product Image";
+}
+
+async function publishProduct() {
+    const name = document.getElementById("productName").value.trim();
+    const desc = document.getElementById("productDesc").value.trim();
+    const price = document.getElementById("productPrice").value;
+    const stock = document.getElementById("productStock").value || 50;
+    const category = document.getElementById("productCategory").value;
+    
+    if (!name || !price) {
+        return alert("Product name and price are required.");
+    }
+
+    const formData = new FormData();
+    formData.append("name", name);
+    formData.append("description", desc);
+    formData.append("price", price);
+    formData.append("stock", stock);
+    formData.append("category", category);
+    formData.append("seller", currentUser.identity);
+
+    // Multiple images support
+    const imageFiles = document.getElementById("productImages").files;
+    for (let file of imageFiles) {
+        formData.append("images", file);
+    }
+
+    const btn = document.querySelector("#fab-product-form button");
+    if (btn) {
+        btn.disabled = true;
+        btn.innerText = "LISTING TO STORE...";
+    }
+
+    try {
+        const res = await fetch(`${API_URL}/products`, {
+            method: 'POST',
+            body: formData
+        });
+
+        if (res.ok) {
+            showToast("✅ Product successfully listed in the Store!");
+            closeFab();
+            // Refresh ecommerce tab if open
+            if (!document.getElementById('ecomSection').classList.contains('hidden')) {
+                loadEcomProducts();
+            }
+        } else {
+            const err = await res.json();
+            alert(err.error || "Failed to list product");
+        }
+    } catch (e) {
+        console.error(e);
+        alert("Network error while listing product");
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerText = "LIST TO STORE";
+        }
+    }
+}
+// Update your existing closeFab to reset mode
+function closeFab() {
+    document.getElementById("fabModal").classList.add("hidden");
+    // Reset to default IP mode
+    setTimeout(() => {
+        setFabMode('ip');
+    }, 300);
+}
+// p2pIntegrationEngine.js
+
+function openAfroMarketplace() {
+    const modal = document.getElementById('afroMarketplaceModal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        // Fetch active order data immediately upon modal layout display mount
+        fetchActiveMarketplaceOrders();
+    }
+}
+
+function closeAfroMarketplace() {
+    const modal = document.getElementById('afroMarketplaceModal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+}
+async function fetchActiveMarketplaceOrders() {
+    const container = document.getElementById('p2pOrdersContainer');
+    try {
+        // Updated to use your global environment base path variable
+        const response = await fetch(`${API_URL}/orders/open`);
+        const data = await response.json();
+        
+        if (!data.success || !data.orders || data.orders.length === 0) {
+            container.innerHTML = `<div class="text-[10px] text-white/30 text-center py-8">No open orders found in liquidity grid.</div>`;
+            return;
+        }
+
+        container.innerHTML = data.orders.map(order => `
+            <div class="border border-white/5 bg-black/20 p-3 flex justify-between items-center text-[11px] font-mono">
+                <div>
+                    <div class="text-cyan-400 font-bold">${Number(order.afroAmount).toFixed(2)} AFRO</div>
+                    {/* Using your custom dynamic endpoint variable mappings */}
+                    <div class="text-[9px] text-white/40 mt-0.5">Rate: KES ${Number(order.currentRateKES || order.fiatRatePerCoin).toFixed(2)} / AFRO</div>
+                    <div class="text-[8px] text-yellow-500/80 mt-1 uppercase">Pay: ${order.paymentMethodDetails || 'M-PESA'}</div>
+                </div>
+                <div class="text-right">
+                    <div class="text-white font-bold mb-1.5">KES ${Number(order.fiatAmount || order.fiatTotal).toFixed(2)}</div>
+                  <button onclick="executeClaimOrder('${order._id}')" 
+        class="bg-yellow-500/20 hover:bg-yellow-500 hover:text-black border border-yellow-500/40 text-yellow-500 px-3 py-1 text-[9px] uppercase font-bold tracking-tighter transition-all">
+    Buy AFRO
+</button>
+                </div>
+            </div>
+        `).join('');
+    } catch (err) {
+        console.error("Marketplace fetch error:", err);
+        container.innerHTML = `<div class="text-[10px] text-red-400/50 text-center py-8">Sync Board Interrupted.</div>`;
+    }
+}
+
+
+// ACTION 2: CREATE AND TRANSMIT A NEW SELL ORDER
+async function executeCreateP2pAd() {
+    if (!currentUser || !currentUser.identity) {
+        return alert("Node authentication missing. Please log in again.");
+    }
+
+    const afroAmount = document.getElementById('p2pSellAmount').value.trim();
+    const paymentMethodDetails = document.getElementById('p2pPaymentDetails').value.trim();
+    const p2pSellRate = document.getElementById('p2pSellRate').value.trim(); // optional rate
+
+    if (!afroAmount || parseFloat(afroAmount) <= 0) {
+        alert("Please enter a valid AFRO amount to sell.");
+        return;
+    }
+    if (!paymentMethodDetails) {
+        alert("Please enter your M-PESA / payment details.");
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_URL}/orders/create`, {   // ← Use full API_URL
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                sellerIdentity: currentUser.identity,   // ← Correct variable
+                afroAmount: parseFloat(afroAmount),
+                paymentMethodDetails: paymentMethodDetails,
+                fiatRatePerCoin: p2pSellRate ? parseFloat(p2pSellRate) : null
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            alert("✅ Liquidity offer successfully added to the global order book!");
+            // Clear form
+            document.getElementById('p2pSellAmount').value = '';
+            document.getElementById('p2pPaymentDetails').value = '';
+            if (document.getElementById('p2pSellRate')) document.getElementById('p2pSellRate').value = '';
+
+            // Refresh orders and balance
+            fetchActiveMarketplaceOrders();
+            updateWalletUI();        // Refresh AFRO balance
+        } else {
+            alert(`Order Failed: ${data.message || "Unknown error"}`);
+        }
+    } catch (err) {
+        console.error("Error creating P2P listing:", err);
+        alert("Network error while injecting liquidity. Check console.");
+    }
+}
+
+
+// ACTION 3: CLAIM AN AD & RUN PAYMENT PROCEDURES
+async function executeClaimOrder(orderId) {
+    if (!currentUser || !currentUser.identity) {
+        return alert("Please log in first.");
+    }
+
+    try {
+        const res = await fetch(`${API_URL}/orders/claim`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                orderId, 
+                buyerIdentity: currentUser.identity 
+            })
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+            const order = data.order;
+            
+            showToast(`Initiating payment of KES ${order.fiatTotal}...`);
+
+            if (data.clientSecret) {
+                showToast("Opening secure payment sheet...");
+
+                handleStripePayment(
+                    data.clientSecret, 
+                    order._id, 
+                    null, 
+                    "Claim & Pay"
+                );
+
+                // ← ADD THE SOCKET LINE HERE
+                if (typeof socket !== "undefined" && socket) {
+                    socket.emit('join_payment_room', data.checkoutID || order._id);
+                }
+
+                // Optional: Show confirmation context
+                const contextArea = document.getElementById("activeTradeContext");
+                const detailsBox = document.getElementById("tradeActionDetails");
+                
+                if (contextArea) contextArea.classList.remove("hidden");
+                
+                detailsBox.innerHTML = `
+                    <p class="mb-2 text-yellow-400">Payment Sheet Opened • Pay KES ${order.fiatTotal}</p>
+                    <p class="text-white/70 text-sm">Complete payment securely via Stripe.</p>
+                    <p class="text-[10px] mt-3 opacity-60">Order will auto-complete once payment is confirmed.</p>
+                `;
+            } else {
+                showToast("Failed to open payment. Please try again.", "error");
+            }
+
+            fetchActiveMarketplaceOrders();
+        } else {
+            alert(`Booking Failed: ${data.message || "Unknown error"}`);
+        }
+    } catch (e) {
+        console.error(e);
+        alert("Network error while claiming order.");
+    }
+}
+
+async function burnIP(postId) {
+    if(!confirm("Burn this CID permanently?")) return;
+    try {
+        const res = await fetch(`${API_URL}/posts/${postId}`, { 
+            method: 'DELETE',
+            headers: {
+                // Pass the logged-in creator's token
+                'Authorization': `Bearer ${localStorage.getItem('userToken')}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (res.status === 403) {
+            showToast("You do not have permission to delete this.");
+            return;
+        }
+
+        if(res.ok) { 
+            const postEl = document.getElementById(`post-${postId}`);
+            if (postEl) postEl.classList.add('burning'); 
+            setTimeout(fetchPosts, 800); 
+        }
+    } catch(e) { 
+        showToast("Burn failed."); 
+    }
+}
+
+function commitVote(choice) {
+    showToast(`Neural Signature Committed: Vote [${choice.toUpperCase()}] Hashed.`);
+}
+
+async function updateWalletUI() {
+    if (!currentUser) {
+        console.warn("updateWalletUI: currentUser not set yet");
+        return;
+    }
+
+    try {
+        // 1. Fetch user node data (this works)
+        const res = await fetch(`${API_URL}/nodes/connect`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ identity: currentUser.identity })
+        });
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        const data = await res.json();
+        const user = data.user || data;  // safe extraction
+
+        if (!user) throw new Error("No user data in response");
+
+        // 2. Simple AFRO price calculation (no missing /platform/metrics needed)
+        const totalUsers = data.nodeCount || 1;
+        const TARGET_USERS = 1000000;
+        const START_PRICE_USD = 0.0078;
+        const MAX_PRICE_USD = 5.00;
+        const USD_TO_KES = 130.00;
+
+        const userRatio = Math.min(totalUsers, TARGET_USERS) / TARGET_USERS;
+        const currentPriceUSD = START_PRICE_USD + ((MAX_PRICE_USD - START_PRICE_USD) * userRatio);
+        const currentPriceKES = currentPriceUSD * USD_TO_KES;
+
+        // 3. Extract balances
+        const tokenBalance = Number(user.afroCoins) || 0;
+        const permanentEarnings = Number(user.earnings) || 0;
+        const assetEquityKES = tokenBalance * currentPriceKES;
+        const totalDisplayEquity = permanentEarnings + assetEquityKES;
+
+        // 4. Safe DOM updates
+        const afroEl = document.getElementById("afroCoinsDisplay");
+if (afroEl) afroEl.innerHTML = `💱 ${tokenBalance.toFixed(2)} AFRO`;
+
+const earningsEl = document.getElementById("earningsDisplay");
+if (earningsEl) earningsEl.innerText = formatPrice(totalDisplayEquity);
+
+const nodeEl = document.getElementById("nodeID");
+if (nodeEl) nodeEl.innerText = `NODE_${currentUser.identity.slice(-4).toUpperCase()}`;
+
+const withdrawEl = document.getElementById("withdrawableAmount");
+if (withdrawEl) withdrawEl.innerText = formatPrice(permanentEarnings);
+
+// 5. P2P modal rate (optional)
+const modalLabel = document.querySelector("#afroMarketplaceModal p");
+if (modalLabel) {
+    modalLabel.innerText = `Rate: 1 AFRO = $${currentPriceUSD.toFixed(3)} USD (~${formatPrice(currentPriceKES)}) | Network: ${totalUsers.toLocaleString()} nodes`;
+}
+
+        console.log(`✅ Wallet UI updated | AFRO: ${tokenBalance} | KES: ${totalDisplayEquity.toFixed(2)}`);
+
+    } catch (e) {
+        console.error("❌ Wallet interface synchronization error:", e);
+        // Optional graceful fallback
+        const nodeEl = document.getElementById("nodeID");
+        if (nodeEl) nodeEl.innerText = "NODE_SYNC_ERROR";
+    }
+}
+
+
+async function fetchGlobalStats() {
+    try {
+        const data = await (await fetch(`${API_URL}/stats`)).json();
+        document.getElementById("taxVaultDisplay").innerText = formatPrice(data.taxVault);
+        document.getElementById("protocolUsers").innerText = `${data.userCount} NODES ACTIVE`;
+    } catch (e) {}
+}
+
+function startGlobalPulse() {
+  const container = document.getElementById('neuralPulse');
+  const items = ["> NEW_IP_STAMPED", "> ASSET_UNLOCKED", "> VAULT_REVENUE_SYNC", "> HANDSHAKE_COMMIT"];
+  setInterval(() => {
+    const el = document.createElement('div');
+    el.className = "flex justify-between opacity-50 text-[9px] animate-pulse";
+    el.innerHTML = `<span>${items[Math.floor(Math.random()*items.length)]}</span><span>${new Date().toLocaleTimeString()}</span>`;
+    container.prepend(el);
+    if(container.children.length > 8) container.lastChild.remove();
+  }, 4000);
+}
+
+function startNotificationListener() {
+    setInterval(async () => {
+        if(!currentUser) return;
+        try {
+            const data = await (await fetch(`${API_URL}/handshake/pulse/${currentUser.identity}`)).json();
+            const dot = document.getElementById('handshakeDot');
+            if (data.active) dot.classList.remove('hidden');
+            else dot.classList.add('hidden');
+            checkOutgoingHandshakes();
+        } catch(e) {}
+    }, 5000); 
+}
+
+async function checkOutgoingHandshakes() {
+    try {
+        const res = await fetch(`${API_URL}/handshake/outgoing/${currentUser.identity}`);
+        const handshakes = await res.json();
+        handshakes.forEach(h => {
+            const lastStatus = handshakeStatusCache[h._id];
+            if (lastStatus !== h.status) {
+                if (h.status === 'accepted') showToast(`🤝 SUCCESS: Creator accepted your split!`);
+                else if (h.status === 'countered') showToast(`⚖️ COUNTER: Creator suggests ${h.split}% split.`);
+                else if (h.status === 'rejected') showToast(`🚫 REJECTED: Handshake declined.`);
+                handshakeStatusCache[h._id] = h.status;
+            }
+        });
+    } catch(e) {}
+}
+
+function showToast(msg) {
+    const c = document.getElementById('toast-container');
+    const t = document.createElement('div');
+    t.className = 'toast'; t.innerText = msg;
+    c.appendChild(t); setTimeout(() => t.remove(), 4000);
+}
+
+function debounceSearch(val) {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(async () => {
+        if (!val) return fetchPosts();
+        const res = await fetch(`${API_URL}/search?q=${encodeURIComponent(val)}`);
+        render(await res.json());
+    }, 350); 
+}
+
+function filterBy(type) {
+    if(type === 'all') render(allPosts);
+    else render(allPosts.filter(p => p.mime?.includes(type)));
+}
+
+function closeHandshake() { document.getElementById('handshakeModal').classList.add('hidden'); }
+function closeFab() { document.getElementById("fabModal").classList.add("hidden"); resetMintUI(); }
+function closeCert() { document.getElementById("certModal").classList.add("hidden"); }
+
+function resetMintUI() {
+    document.getElementById("mintBtn").disabled = false;
+    document.getElementById("progressSvg").classList.add("hidden");
+    document.getElementById("btnText").innerText = "STAMP & MONETIZE";
+    document.getElementById("uploadStatus").style.opacity = "0";
+}
+
+function updateFileName() { 
+    const f = document.getElementById("fabFile").files[0];
+    document.getElementById("fileLabel").innerText = f ? f.name : "Select Neural Data"; 
+}
+
+function setMintType(t) {
+    activeMintType = t;
+    const btnFile = document.getElementById('typeFile');
+    const btnStream = document.getElementById('typeStream');
+    if (t === 'file') {
+        btnFile.classList.add('bg-yellow-500', 'text-black');
+        btnFile.classList.remove('text-slate-400');
+        btnStream.classList.remove('bg-yellow-500', 'text-black');
+        btnStream.classList.add('text-slate-400');
+        document.getElementById('fileInputContainer').classList.remove('hidden');
+        document.getElementById('streamInputContainer').classList.add('hidden');
+    } else {
+        btnStream.classList.add('bg-yellow-500', 'text-black');
+        btnStream.classList.remove('text-slate-400');
+        btnFile.classList.remove('bg-yellow-500', 'text-black');
+        btnFile.classList.add('text-slate-400');
+        document.getElementById('fileInputContainer').classList.add('hidden');
+        document.getElementById('streamInputContainer').classList.remove('hidden');
+    }
+}
+
+function viewCID(postId) {
+    const p = allPosts.find(x => x._id === postId);
+    if (!p) return;
+
+    // Use stored timestamp or fallback to current time
+    const genesisTime = p.timestamp ? new Date(p.timestamp) : new Date();
+    
+    const dateStr = genesisTime.toLocaleDateString('en-GB', { 
+        day: 'numeric', 
+        month: 'short', 
+        year: 'numeric' 
+    }).toUpperCase();
+    
+    const timeStr = genesisTime.toLocaleTimeString('en-GB', { 
+        hour: '2-digit', 
+        minute: '2-digit', 
+        second: '2-digit' 
+    });
+
+    // Safe CID fallback for the serial number
+    const safeCid = p.cid || p._id || "000000000";
+    const serialNo = "INF-" + safeCid.substring(0, 9).toUpperCase();
+
+    // Safe Creator display
+    const ownerSuffix = p.owner ? p.owner.slice(-4) : "0000";
+
+    const certContent = document.getElementById("certContent");
+    if (!certContent) return;
+
+    certContent.innerHTML = `
+        <div class="absolute top-0 left-0 w-full h-1.5 bg-yellow-500"></div>
+        <div class="absolute top-4 left-6 text-[8px] font-mono text-white/30 tracking-widest uppercase">Serial No: ${serialNo}</div>
+        <div class="text-center mt-6 mb-10">
+            <div class="text-[9px] text-cyan-400 font-black uppercase tracking-[0.5em] mb-4">iNFLUENSA Global IP Registry</div>
+            <h2 class="text-3xl font-bold text-white uppercase tracking-tighter leading-none mb-1">IP CERTIFICATE OF TITLE</h2>
+            <div class="h-px w-32 bg-yellow-500/30 mx-auto mt-4"></div>
+        </div>
+        <div class="space-y-6">
+            <div class="p-5 border border-white/10 bg-black/40 rounded-xl relative overflow-hidden">
+                <div class="text-[8px] text-yellow-500 uppercase font-black tracking-widest mb-3 flex items-center gap-2">
+                    <span class="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-pulse"></span> ASSET IDENTITY
+                </div>
+                <p class="text-2xl font-bold text-white uppercase tracking-tight">${p.title || 'Untitled Asset'}</p>
+                <div class="flex justify-between items-end mt-4">
+                   <div>
+                       <p class="text-[7px] text-slate-500 uppercase">Registered Creator</p>
+                       <p class="text-[11px] font-mono text-white/80">${ownerSuffix}</p>
+                   </div>
+                   <div class="text-right">
+                       <p class="text-[7px] text-slate-500 uppercase">Valuation</p>
+                       <p class="text-[11px] font-bold text-yellow-500">KES ${p.price || 0}</p>
+                   </div>
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div class="p-4 border border-white/5 bg-white/5 rounded-xl">
+                    <p class="text-[7px] text-slate-500 uppercase mb-1">Registration Date</p>
+                    <p class="text-[11px] font-mono text-cyan-400 font-bold">${dateStr}</p>
+                </div>
+                <div class="p-4 border border-white/5 bg-white/5 rounded-xl">
+                    <p class="text-[7px] text-slate-500 uppercase mb-1">System Time (EAT)</p>
+                    <p class="text-[11px] font-mono text-cyan-400 font-bold">${timeStr}</p>
+                </div>
+            </div>
+            <div class="p-5 border border-dashed border-white/20 bg-black/20 rounded-xl">
+                <p class="text-[8px] text-slate-400 uppercase font-bold tracking-widest mb-2">Neural CID Hash (Defensible Evidence)</p>
+                <p class="text-[10px] font-mono text-cyan-500 break-all leading-relaxed bg-black/40 p-3 rounded border border-white/5 shadow-inner">
+                    ${safeCid}
+                </p>
+            </div>
+        </div>
+        <div class="legal-seal">CERTIFIED</div>
+        <div class="mt-10 flex gap-3 no-print">
+            <button onclick="window.print()" class="flex-1 py-4 bg-yellow-500 text-black text-[10px] font-black uppercase rounded-xl btn-glow shadow-xl">Download Legal PDF</button>
+            <button onclick="closeCert()" class="flex-1 py-4 bg-white/5 text-white text-[10px] font-black uppercase rounded-xl border border-white/10 hover:bg-white/10 transition-all">Close Audit</button>
+        </div>
+        <div class="mt-6 pt-4 border-t border-white/5 text-center">
+            <p class="text-[7px] text-slate-600 uppercase leading-relaxed font-mono">
+                This document serves as cryptographic proof of ownership within the iNFLUENSA Neural Mesh.<br/>
+                Verification Code: ${btoa(p._id).substring(0,12)} | Block Height: #882,109
+            </p>
+        </div>
+    `;
+
+    const modal = document.getElementById("certModal");
+    if (modal) modal.classList.remove("hidden");
+}
+
+async function shareAndDownload(postId, price) {
+    if(confirm(`Confirm Premium License for KES ${10.0*price}?`)) await unlockIP(postId, 'share_download');
+}
+
+function requestWithdrawal() {
+    document.getElementById('withdrawalModal').classList.remove('hidden');
+    document.getElementById('payoutPhone').value = currentUser.identity;
+    updateWalletUI();
+}
+
+function togglePayoutFields() {
+    const method = document.getElementById('payoutMethod').value;
+    document.getElementById('mobileMoneyFields').classList.toggle('hidden', method !== 'mobile_money');
+    document.getElementById('bankFields').classList.toggle('hidden', method !== 'bank_transfer');
+}
+
+function openAfroSendModal() {
+    document.getElementById('afroSendModal').classList.remove('hidden');
+}
+
+function openAfroSendModal() {
+    document.getElementById('afroSendModal').classList.remove('hidden');
+}
+
+async function sendAfroCoins() {
+    const recipient = document.getElementById('recipientPhone').value.trim();
+    const amount = parseFloat(document.getElementById('sendAfroAmount').value);
+    
+    if (!recipient || !amount) return alert("Please fill recipient and amount");
+
+    try {
+        const res = await fetch(`${API_URL}/afro/transfer`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                senderIdentity: currentUser.identity,
+                recipientIdentity: recipient,
+                amount
+            })
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast(`✅ ${amount} AFRO sent to ${recipient}`);
+            document.getElementById('afroSendModal').classList.add('hidden');
+            updateWalletUI();
+        } else {
+            alert(data.error || "Transfer failed");
+        }
+    } catch (e) {
+        alert("Network error");
+    }
+}
+
+// Generate redemption code for store use
+async function generateStoreRedemption() {
+    const amount = prompt("Enter AFRO amount to redeem at store:");
+    if (!amount) return;
+    
+    const res = await fetch(`${API_URL}/afro/generate-redemption`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identity: currentUser.identity, amount })
+    });
+    const data = await res.json();
+    if (data.success) {
+        alert(`Redemption Code: ${data.redemptionCode}\nValue: ${data.amount} AFRO\nShow to merchant`);
+    }
+}
+async function finalizeWithdrawal() {
+    const method = document.getElementById('payoutMethod').value;
+    const btn = document.getElementById('withdrawSubmitBtn');
+    let payload = { identity: currentUser.identity, type: method };
+
+    if (method === 'mobile_money') {
+        payload.phone = document.getElementById('payoutPhone').value;
+    } else {
+        payload.account_number = document.getElementById('accountNumber').value;
+        payload.bank_code = document.getElementById('bankCode').value;
+    }
+
+    btn.innerText = "HACKING PAYOUT RAILS...";
+    btn.disabled = true;
+
+    try {
+        const res = await fetch(`${API_URL}/withdraw/flutterwave`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (res.ok) {
+            showToast("Payout Initialized: Funds on route.");
+            document.getElementById('withdrawalModal').classList.add('hidden');
+            updateWalletUI();
+        } else {
+            showToast(data.error || "Vault Locked: Minimum KES 500 required.");
+        }
+    } catch (e) {
+        showToast("Neural Bridge Error. Try again.");
+    } finally {
+        btn.innerText = "Initiate Payout";
+        btn.disabled = false;
+    }
+}
+
+// INJECTED: RESELL MODAL INTERACTIVE LOGIC PIPELINE
+function openResellModal(postId, postTitle) {
+    selectedResellPostId = postId;
+    document.getElementById('resellTargetTitle').innerText = postTitle;
+    document.getElementById('resellPriceInput').value = "";
+    document.getElementById('resellPlatformCut').innerText = formatPrice(0);
+    document.getElementById('resellCreatorCut').innerText = formatPrice(0);
+    document.getElementById('resellNetYield').innerText = formatPrice(0);
+    document.getElementById('resellModal').classList.remove('hidden');
+    document.getElementById('resellCurrencyLabel').innerText = userCurrency.code;
+}
+function closeResellModal() {
+    document.getElementById('resellModal').classList.add('hidden');
+    selectedResellPostId = null;
+}
+
+function calculateResellSplits(val) {
+    const price = parseFloat(val) || 0;
+    const platformFee = price * 0.0789;
+    const royaltyFee = price * 0.15;
+    const netYield = price - platformFee - royaltyFee;
+    
+    document.getElementById('resellPlatformCut').innerText = formatPrice(platformFee);
+    document.getElementById('resellCreatorCut').innerText = formatPrice(royaltyFee);
+    document.getElementById('resellNetYield').innerText = formatPrice(netYield);
+}
+async function finalizeResellDeployment() {
+    const price = document.getElementById('resellPriceInput').value.trim();
+    if(!price || parseFloat(price) <= 0) return alert("Please enter a valid retail price point.");
+    
+    const btn = document.getElementById('resellSubmitBtn');
+    btn.innerText = "DEPLOYING NEURAL RE-LISTING...";
+    btn.disabled = true;
+
+    try {
+        const res = await fetch(`${API_URL}/posts/${selectedResellPostId}/resell`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                resellerPhone: currentUser.identity,
+                resellPrice: parseFloat(price)
+            })
+        });
+        
+        const data = await res.json();
+        if (res.ok) {
+            showToast("🚀 Secondary Resell Node Deployed!");
+            closeResellModal();
+            await fetchPosts();
+        } else {
+            alert(data.message || data.error || "Deployment Rejected.");
+        }
+    } catch(e) {
+        showToast("Mesh routing error encountered.");
+    } finally {
+        btn.innerText = "Deploy Fractional Listing";
+        btn.disabled = false;
+    }
+}
+// Change this to your actual production domain when deployed
+const MESH_API_URL = window.location.origin; 
+
+async function streamNodeTelemetry() {
+    try {
+        // Cache-busting URL parameter forces the browser to bypass local storage
+        const response = await fetch(`${MESH_API_URL}/api/governance/sidebar?t=${Date.now()}`);
+        if (!response.ok) throw new Error(`PROTOCOL_DISCONNECT: Status ${response.status}`);
+        
+        const telemetry = await response.json();
+
+        // 1. Update IP Circulation (Active Posts Count)
+        const circulationEl = document.getElementById("circulationDisplay");
+        if (circulationEl && telemetry.activeIPs !== undefined) {
+            circulationEl.innerText = Number(telemetry.activeIPs).toLocaleString();
+        }
+
+        // 2. Update Neural Uplink Performance Metric
+        const uplinkEl = document.getElementById("uplinkDisplay");
+        if (uplinkEl && telemetry.uplink) {
+            uplinkEl.innerText = telemetry.uplink;
+        }
+
+        // 3. Update Gas Efficiency Metric Dynamically based on server calculations
+        const gasEl = document.getElementById("gasEfficiencyDisplay");
+        if (gasEl && telemetry.efficiency) {
+            gasEl.innerText = telemetry.efficiency;
+            
+            // Visual indicators based on state
+            if (telemetry.efficiency === "LOW_FEE") {
+                gasEl.className = "text-xl font-bold text-green-500";
+            } else {
+                gasEl.className = "text-xl font-bold text-yellow-500";
+            }
+        }
+
+        console.log("⚡ Node Telemetry Sync: Online");
+    } catch (error) {
+        console.error("❌ Node Telemetry Sync Lost:", error);
+        
+        // Soft UI Failover: Let the user know the connection dropped without throwing errors
+        const circulationEl = document.getElementById("circulationDisplay");
+        if (circulationEl && circulationEl.innerText === "...") {
+            circulationEl.innerText = "OFFLINE";
+        }
+    }
+}
+let isMerchantMode = false;
+
+function toggleMerchantMode() {
+    isMerchantMode = !isMerchantMode;
+    const btn = document.getElementById('merchantToggleBtn');
+    const dashboard = document.getElementById('merchantDashboard');
+    
+    if (isMerchantMode) {
+        btn.innerHTML = '🛒 Buyer Mode';
+        btn.classList.add('bg-amber-500/20', 'text-amber-400');
+        dashboard.classList.remove('hidden');
+        loadMerchantHistory();
+    } else {
+        btn.innerHTML = '👤 Switch to Merchant Mode';
+        btn.classList.remove('bg-amber-500/20', 'text-amber-400');
+        dashboard.classList.add('hidden');
+    }
+}
+
+async function redeemAsMerchant() {
+    const code = document.getElementById('merchantCodeInput').value.trim();
+    const amount = parseFloat(document.getElementById('merchantClaimAmount').value);
+
+    if (!code || !amount) {
+        alert("Please enter code and amount");
+        return;
+    }
+
+    try {
+        const res = await fetch(`${API_URL}/afro/redeem`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                redemptionCode: code,
+                merchantIdentity: currentUser.identity,
+                claimedAmount: amount
+            })
+        });
+
+        const data = await res.json();
+        if (data.success) {
+            showToast(`✅ Redeemed ${amount} AFRO successfully!`);
+            document.getElementById('merchantCodeInput').value = '';
+            document.getElementById('merchantClaimAmount').value = '';
+            loadMerchantHistory();
+            updateWalletUI();
+        } else {
+            alert(data.error || "Redemption failed");
+        }
+    } catch (e) {
+        alert("Network error");
+    }
+}
+
+async function loadMerchantHistory() {
+    // For now, show local recent activity. You can extend with a backend endpoint later
+    const container = document.getElementById('merchantHistory');
+    container.innerHTML = `
+        <div class="text-center py-8 text-slate-400 text-sm">
+            Recent redemptions will appear here.<br/>
+            <span class="text-[10px]">Use real merchant node for production</span>
+        </div>
+    `;
+    // TODO: Add backend /api/merchant/history if needed
+}
+// Fire immediately on load, then poll the mesh every 15 seconds
+document.addEventListener("DOMContentLoaded", () => {
+    streamNodeTelemetry();
+    setInterval(streamNodeTelemetry, 15000);
+});
+async function generateRedemptionCode() {
+    if (!currentUser) {
+        return alert("Please connect your node first");
+    }
+
+    const amount = prompt("Enter amount of AFRO to redeem for physical goods (e.g. 50):");
+    if (!amount || isNaN(amount) || parseFloat(amount) <= 0) {
+        return alert("Please enter a valid amount");
+    }
+
+    try {
+        const res = await fetch(`${API_URL}/afro/generate-redemption`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                identity: currentUser.identity,
+                amount: parseFloat(amount)
+            })
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+            alert(`✅ Redemption Code Generated!\n\nCode: ${data.redemptionCode}\nValue: ${data.amount} AFRO\n\nShow this code to the merchant.`);
+            updateWalletUI(); // Refresh balance
+        } else {
+            alert(data.error || "Failed to generate code");
+        }
+    } catch (e) {
+        console.error(e);
+        alert("Network error. Please try again.");
+    }
+}
+// ==================== TAB SWITCHING ====================
+let currentTab = 0;
+
+function switchTab(tab) {
+  currentTab = tab;
+
+  // Update active tab styling
+  const tabIp = document.getElementById('tab-ip');
+  const tabEcom = document.getElementById('tab-ecom');
+  
+  if (tabIp) tabIp.classList.toggle('tab-active', tab === 0);
+  if (tabEcom) tabEcom.classList.toggle('tab-active', tab === 1);
+
+  // Toggle sections
+  const mainFeed = document.getElementById('mainFeedSection');
+  const ecomSection = document.getElementById('ecomSection');
+  
+  if (mainFeed) mainFeed.classList.toggle('hidden', tab === 1);
+  if (ecomSection) ecomSection.classList.toggle('hidden', tab === 0);
+
+  // Load products when switching to E-commerce tab
+  if (tab === 1) {
+    loadEcomProducts();
+  }
+
+  // Update sliding indicator (for the enhanced tab design)
+  const indicator = document.getElementById('tab-indicator');
+  if (indicator) {
+    indicator.style.left = tab === 0 ? '0%' : '50%';
+  }
+}
+
+// ==================== ECOMMERCE ====================
+let allEcomProducts = [];
+
+async function loadEcomProducts() {
+  const container = document.getElementById('ecomContainer');
+  if (!container) return;
+
+  container.innerHTML = `<div class="col-span-full py-12 text-center text-yellow-400">Loading products...</div>`;
+  
+  try {
+    const res = await fetch(`${API_URL}/products`);
+    allEcomProducts = await res.json();
+    renderEcomProducts(allEcomProducts);
+  } catch (e) {
+    console.error(e);
+    container.innerHTML = `<div class="col-span-full py-12 text-center text-red-400">Failed to load store. Check connection.</div>`;
+  }
+}
+
+function renderEcomProducts(products) {
+  const container = document.getElementById('ecomContainer');
+  container.innerHTML = products.map(p => `
+    <div class="glass product-card overflow-hidden flex flex-col h-full">
+      <div class="h-64 bg-black relative">
+        <!-- Show first image or fallback -->
+        <img src="${(p.images && p.images.length > 0) ? '/uploads/' + p.images[0] : (p.image || '/uploads/default-product.jpg')}" 
+             class="w-full h-full object-cover">
+        
+        ${p.stock > 0 ? `<div class="absolute top-4 right-4 bg-green-500 text-black text-xs px-3 py-1 rounded-full font-bold">IN STOCK</div>` : ''}
+        
+        <!-- Image counter badge -->
+        ${p.images && p.images.length > 1 ? 
+          `<div class="absolute bottom-4 left-4 bg-black/70 text-white text-[10px] px-2 py-0.5 rounded-full font-mono">
+            +${p.images.length - 1}
+          </div>` : ''}
+      </div>
+      
+      <div class="p-6 flex-1 flex flex-col">
+        <h4 class="text-xl font-bold">${p.name}</h4>
+        <p class="text-sm text-slate-400 mt-1 line-clamp-2">${p.description}</p>
+        
+        <div class="mt-auto pt-6">
+          <div class="flex justify-between items-end">
+            <div>
+       <span class="text-2xl font-bold text-yellow-400">${formatPrice(p.price)}</span>
+            </div>
+            <button onclick="showPurchaseOptions('${p._id}', ${p.price})" 
+              class="bg-yellow-500 hover:bg-yellow-400 text-black px-6 py-3 rounded-xl font-black text-sm uppercase tracking-widest btn-glow">
+              PURCHASE
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+function updateProductImagesName() {
+    const files = document.getElementById("productImages").files;
+    const label = document.getElementById("productImagesLabel");
+    if (label) {
+        label.innerText = files.length > 0 
+            ? `${files.length} image(s) selected (Max 5)` 
+            : "Upload Product Images (Max 5)";
+    }
+}
+
+
+function showPurchaseOptions(productId, price) {
+  const modalHTML = `
+    <div id="purchase-modal" class="fixed inset-0 bg-black/95 backdrop-blur-2xl flex items-center justify-center z-[200]">
+      <div class="glass p-8 w-full max-w-md rounded-3xl">
+        <h3 class="text-2xl font-bold text-yellow-400 mb-6">Purchase Options</h3>
+        
+        <div class="space-y-4">
+          <button onclick="initiatePayment('${productId}', ${price}, 'full')" class="w-full py-4 bg-yellow-500 text-black font-bold rounded-xl">Pay Full Now (KES ${price})</button>
+          <button onclick="initiatePayment('${productId}', ${price}, 'delivery')" class="w-full py-4 bg-white/10 text-white font-bold rounded-xl border border-white/30">Buy on Delivery</button>
+          <button onclick="initiatePayment('${productId}', ${price}, 'plan')" class="w-full py-4 bg-emerald-500 text-black font-bold rounded-xl">3-Month Payment Plan</button>
+        </div>
+        
+        <button onclick="closePurchaseModal()" class="mt-6 w-full py-3 text-slate-400">Cancel</button>
+      </div>
+    </div>`;
+  
+  document.body.insertAdjacentHTML('beforeend', modalHTML);
+}
+
+window.closePurchaseModal = () => document.getElementById('purchase-modal')?.remove();
+
+async function initiatePayment(productId, price, type) {
+  closePurchaseModal();
+  // Reuse your existing unlockIP flow with different types
+  await unlockIP(productId, type);   // 'full', 'delivery', or 'plan'
+}
+
+async function buyProduct(productId) {
+  const product = allEcomProducts.find(p => p._id === productId);
+  if (!product) return;
+  
+  if (confirm(`Purchase ${product.name} for KES ${product.price}?`)) {
+    await unlockIP(productId, 'product_purchase'); // Reuses your existing payment flow
+  }
+}
+function showPurchaseOptions(productId, price) {
+    const modalHTML = `
+        <div id="purchase-modal" class="fixed inset-0 bg-black/95 backdrop-blur-2xl flex items-center justify-center z-[200] p-4">
+            <div class="glass p-8 w-full max-w-md rounded-3xl relative">
+                <button onclick="closePurchaseModal()" class="absolute top-4 right-4 text-slate-400 hover:text-white text-2xl">✕</button>
+                
+                <h3 class="text-2xl font-bold text-yellow-400 mb-6 text-center">Choose Payment Option</h3>
+                <p class="text-center text-slate-400 mb-8">KES ${price}</p>
+                
+                <div class="space-y-3">
+                    <button onclick="initiatePurchase('${productId}', ${price}, 'full')" 
+                            class="w-full py-4 bg-yellow-500 hover:bg-yellow-400 text-black font-bold rounded-2xl transition-all">
+                        💰 Pay Full Now
+                    </button>
+                    
+                    <button onclick="initiatePurchase('${productId}', ${price}, 'delivery')" 
+                            class="w-full py-4 bg-white/10 hover:bg-white/20 text-white font-bold rounded-2xl border border-white/30 transition-all">
+                        📦 Buy on Delivery (Pay on Receipt)
+                    </button>
+                    
+                    <button onclick="initiatePurchase('${productId}', ${price}, 'plan')" 
+                            class="w-full py-4 bg-emerald-500 hover:bg-emerald-400 text-black font-bold rounded-2xl transition-all">
+                        📅 3-Month Payment Plan<br>
+                        <span class="text-sm opacity-75">(KES ${Math.round(price/3)} × 3)</span>
+                    </button>
+                </div>
+                
+                <p class="text-center text-[10px] text-slate-500 mt-6">Secured by iNFLUENSA • Flutterwave / M-PESA</p>
+            </div>
+        </div>`;
+    
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+}
+
+function closePurchaseModal() {
+    const modal = document.getElementById('purchase-modal');
+    if (modal) modal.remove();
+}
+async function initiatePurchase(productId, price, type) {
+    closePurchaseModal();
+    
+    let finalAmount = price;
+    let paymentType = type;
+
+    if (type === 'plan') {
+        finalAmount = Math.round(price / 3);  // First installment
+        showToast(`First installment: KES ${finalAmount} (3-month plan)`);
+    } else if (type === 'delivery') {
+        showToast("Order placed! Pay on delivery.");
+    }
+
+    // Reuse your existing payment system
+    await unlockIP(productId, paymentType);   // 'full', 'delivery', or 'plan'
+}
+function debounceEcomSearch(val) {
+  clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(() => {
+    if (!val) return renderEcomProducts(allEcomProducts);
+    const filtered = allEcomProducts.filter(p => 
+      p.name.toLowerCase().includes(val.toLowerCase()) || 
+      p.description.toLowerCase().includes(val.toLowerCase())
+    );
+    renderEcomProducts(filtered);
+  }, 300);
+}
+
+
+
+
+</script>
+</body>
+</html>
 
