@@ -1156,29 +1156,74 @@ function renderTeaserMedia(p, isAudio) {
 
 /* MODIFIED: Secure Watermarked Rendering Logic */
 function renderFullMedia(p) {
-    const secureUrl = `${API_URL}/api/media/${p._id}?phone=${currentUser.identity}`;
-    
-    if(p.is_stream) {
-        return `<iframe src="${p.stream_url}" class="w-full h-full" allow="autoplay; encrypted-media"></iframe>`;
-    }
-    
-    if(p.mime?.includes('video')) {
-        return `<video src="${secureUrl}" controls controlsList="nodownload" class="w-full h-full object-cover"></video>`;
-    }
-    
-    if(p.mime?.includes('audio')) {
+    const secureUrl =
+        `${API_URL}/api/media/${p._id}?phone=${encodeURIComponent(currentUser.identity)}`;
+
+    if (p.is_stream) {
         return `
-        <div class="flex flex-col items-center justify-center h-full w-full bg-slate-900/50 p-4">
-            <div class="flex gap-1 mb-4">
-                <div class="audio-bar"></div><div class="audio-bar"></div><div class="audio-bar"></div>
-            </div>
-            <audio src="${secureUrl}" controls controlsList="nodownload" class="w-full"></audio>
-        </div>`;
+            <iframe
+                src="${p.stream_url}"
+                class="w-full h-full"
+                allow="autoplay; encrypted-media">
+            </iframe>
+        `;
     }
 
-    return `<img src="${secureUrl}" class="w-full h-full object-cover">`;
-}
+    if (p.mime?.includes('video')) {
+        return `
+            <video
+                src="${secureUrl}"
+                controls
+                controlsList="nodownload"
+                playsinline
+                preload="metadata"
+                class="w-full h-full object-cover"
+                onerror="handleMediaError(this, '${p._id}')">
+            </video>
+        `;
+    }
 
+    if (p.mime?.includes('audio')) {
+        return `
+            <div class="flex flex-col items-center justify-center h-full w-full bg-slate-900/50 p-4">
+                <div class="flex gap-1 mb-4">
+                    <div class="audio-bar"></div>
+                    <div class="audio-bar"></div>
+                    <div class="audio-bar"></div>
+                </div>
+
+                <audio
+                    src="${secureUrl}"
+                    controls
+                    controlsList="nodownload"
+                    preload="metadata"
+                    class="w-full"
+                    onerror="handleMediaError(this, '${p._id}')">
+                </audio>
+            </div>
+        `;
+    }
+
+    return `
+        <img
+            src="${secureUrl}"
+            class="w-full h-full object-cover"
+            onerror="handleMediaError(this, '${p._id}')"
+        >
+    `;
+}
+function handleMediaError(element, postId) {
+    console.error(
+        `❌ Media failed to load for post: ${postId}`
+    );
+
+    showToast(
+        "⚠️ Video processing failed. You are still unlocked. Please try again."
+    );
+
+    // Do NOT call unlockIP() here.
+    // The user has already paid.
+}
 /**
  * Triggers the IP Asset Purchase workflow, registers checkout telemetry,
  * and handles real-time verification polling.
@@ -1239,40 +1284,110 @@ async function unlockIP(postId, type = 'unlock') {
 
     const res = await fetch(`${API_URL}/posts/${postId}/unlock`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json'
+      },
       body: JSON.stringify({
-        phone: currentUser.identity,   // still send phone for M-PESA
+        phone: currentUser.identity,
         type,
-        country                        // ← important: let backend know
+        country
       })
     });
 
     const data = await res.json();
 
+    // ============================================================
+    // ALREADY UNLOCKED
+    // ============================================================
+    // Payment was already completed previously.
+    // DO NOT initiate another payment.
+    // Go directly to media/viewing.
+    // ============================================================
+
+    if (data.alreadyUnlocked === true || data.authorized === true) {
+      console.log(
+        `🔓 Already authorized for post ${postId}. No payment required.`
+      );
+
+      showToast("✅ Already unlocked. Opening media...");
+
+      // Re-enable the button while the media request is handled.
+      if (btn) {
+        btn.disabled = false;
+        btn.classList.remove('processing-payout');
+      }
+
+      // Open/view the already-paid media.
+      return viewPostMedia(postId);
+    }
+
+    // ============================================================
+    // NORMAL PAYMENT FLOW
+    // ============================================================
+
     if (!data.checkoutID && !data.clientSecret) {
-      throw new Error(data.error || data.message || "Gateway Error");
+      throw new Error(
+        data.error ||
+        data.message ||
+        "Gateway Error"
+      );
     }
 
     if (useMpesa) {
+
       // M-PESA Flow
-      showToast("STK Push Sent. Enter PIN on your phone.");
-      startPaymentPolling(data.checkoutID, btn, originalText);
+      showToast(
+        "STK Push Sent. Enter PIN on your phone."
+      );
+
+      startPaymentPolling(
+  data.checkoutID,
+  btn,
+  originalText,
+  postId
+);
+
     } else {
-      // Stripe (or Flutterwave) Flow
+
+      // Stripe Flow
       if (data.clientSecret) {
-        await handleStripePayment(data.clientSecret, postId, btn, originalText);
+
+        await handleStripePayment(
+          data.clientSecret,
+          postId,
+          btn,
+          originalText
+        );
+
       } else if (data.payment_link) {
-        // Flutterwave / redirect style
+
+        // Flutterwave / redirect-style payment
         window.location.href = data.payment_link;
+
       } else {
-        throw new Error("No payment credentials received");
+
+        throw new Error(
+          "No payment credentials received"
+        );
       }
     }
 
   } catch (e) {
-    console.error("🚨 unlockIP failed:", e);
-    showToast("Payment Error: " + (e.message || "Please try again"));
-    resetUnlockBtn(btn, originalText);
+
+    console.error(
+      "🚨 unlockIP failed:",
+      e
+    );
+
+    showToast(
+      "Payment Error: " +
+      (e.message || "Please try again")
+    );
+
+    resetUnlockBtn(
+      btn,
+      originalText
+    );
   }
 }
 // PRODUCTION STRIPE HANDLER
@@ -1425,35 +1540,156 @@ async function handleClaimPayouts(countryCode = 'US') {
 }
 
 // M-PESA POLLING
-function startPaymentPolling(checkoutID, btn, originalText) {
+async function startPaymentPolling(checkoutID, btn, originalText, postId = null) {
   let attempts = 0;
+
   const poll = setInterval(async () => {
     attempts++;
+
     try {
       const sRes = await fetch(`${API_URL}/stk-status/${checkoutID}`);
       const s = await sRes.json();
-      const status = (s.status || '').toString().toLowerCase().trim();
+
+      const status = (s.status || '')
+        .toString()
+        .toLowerCase()
+        .trim();
+
+      console.log(
+        `🔄 Payment polling | Checkout: ${checkoutID} | Status: ${status} | Attempt: ${attempts}`
+      );
+
+      // ============================================================
+      // PAYMENT COMPLETED
+      // ============================================================
 
       if (status === 'completed' || status === 'success') {
         clearInterval(poll);
-        showToast("🔓 Asset Unlocked Successfully!");
+
+        showToast("🔓 Payment confirmed. Asset unlocked.");
+
+        // Refresh posts so unlocked_by/access state is reflected
+        // in the frontend.
         await fetchPosts();
+
         resetUnlockBtn(btn, originalText);
-      } else if (status === 'failed' || status === 'cancelled') {
-        clearInterval(poll);
-        showToast("❌ Payment Failed.");
-        resetUnlockBtn(btn, originalText);
+
+        // IMPORTANT:
+        // Do NOT call unlockIP() again.
+        //
+        // Payment is already complete.
+        // The media endpoint will now verify access using:
+        //
+        // /api/media/:postId?phone=...
+        //
+        // If postId is available, reload the media directly.
+        if (postId) {
+          console.log(
+            `🎬 Payment complete. Attempting media for post ${postId}`
+          );
+
+          try {
+            const mediaRes = await fetch(
+              `${API_URL}/api/media/${postId}?phone=${encodeURIComponent(currentUser.identity)}`,
+              {
+                method: 'GET',
+                redirect: 'follow'
+              }
+            );
+
+            if (!mediaRes.ok) {
+              console.error(
+                `❌ Media request failed after payment: ${mediaRes.status}`
+              );
+
+              showToast(
+                "✅ Payment confirmed. Video processing failed — you can retry viewing without paying again."
+              );
+
+              return;
+            }
+
+            console.log(
+              "✅ Media endpoint authorized successfully."
+            );
+
+            // Refresh UI so the unlocked asset can be viewed.
+            await fetchPosts();
+
+          } catch (mediaErr) {
+            console.error(
+              "❌ Media processing error after payment:",
+              mediaErr
+            );
+
+            showToast(
+              "✅ Payment confirmed. Video processing is still unavailable. Retry viewing without paying again."
+            );
+          }
+        }
+
+        return;
       }
-    } catch (e) {}
+
+      // ============================================================
+      // PAYMENT FAILED / CANCELLED
+      // ============================================================
+
+      if (
+        status === 'failed' ||
+        status === 'cancelled'
+      ) {
+        clearInterval(poll);
+
+        showToast("❌ Payment Failed.");
+
+        resetUnlockBtn(
+          btn,
+          originalText
+        );
+
+        return;
+      }
+
+    } catch (e) {
+      console.error(
+        "⚠️ Payment polling error:",
+        e
+      );
+    }
+
+    // ============================================================
+    // VERIFICATION TIMEOUT
+    // ============================================================
 
     if (attempts > 30) {
       clearInterval(poll);
-      showToast("⌛ Verification Timeout.");
-      resetUnlockBtn(btn, "RETRY UNLOCK");
+
+      console.warn(
+        `⌛ Payment verification timeout for ${checkoutID}`
+      );
+
+      /*
+       * IMPORTANT:
+       *
+       * Do NOT say "RETRY UNLOCK".
+       * The user may already have paid.
+       *
+       * A timeout means we don't yet know the final payment state.
+       */
+
+      showToast(
+        "⌛ Payment verification is taking longer than expected. Please check your transaction status before trying to pay again."
+      );
+
+      resetUnlockBtn(
+        btn,
+        "CHECK PAYMENT"
+      );
     }
+
   }, 3000);
 }
-
 function closeStripeModal() {
   const modal = document.getElementById('stripe-modal');
   if (modal) modal.remove();
