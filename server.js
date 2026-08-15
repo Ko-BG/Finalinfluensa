@@ -3781,7 +3781,35 @@ app.get('/api/media/:postId', async (req, res) => {
                 "✅ Original video downloaded:",
                 tempInput
             );
+            console.log("🎬 INPUT FILE:", tempInput);
 
+await new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(tempInput, (err, metadata) => {
+        if (err) {
+            console.error("❌ FFprobe error:", err);
+            return reject(err);
+        }
+
+        console.log("========== VIDEO INFO ==========");
+        console.log(JSON.stringify({
+            format: metadata.format,
+            streams: metadata.streams?.map(s => ({
+                index: s.index,
+                codec_name: s.codec_name,
+                codec_type: s.codec_type,
+                width: s.width,
+                height: s.height,
+                pix_fmt: s.pix_fmt,
+                r_frame_rate: s.r_frame_rate,
+                avg_frame_rate: s.avg_frame_rate,
+                duration: s.duration
+            }))
+        }, null, 2));
+        console.log("================================");
+
+        resolve();
+    });
+});
             // ========================================================
             // 8D. APPLY WATERMARK WITH FFMPEG
             // ========================================================
