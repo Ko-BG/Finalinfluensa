@@ -3684,24 +3684,26 @@ app.get('/api/media/:postId', async (req, res) => {
         // Use ONLY the real S3 key stored in post.filekey.
         // Do NOT fall back to filename or files.
         // ============================================================
-        const originalKey = post.filekey;
+       const originalKey = post.filekey;
 
-        if (!originalKey || typeof originalKey !== "string") {
-            console.error("❌ FILE_KEY_MISSING", {
-                postId: post._id.toString(),
-                filekey: post.filekey,
-                filename: post.filename
-            });
+if (!originalKey || typeof originalKey !== "string") {
+    console.error("❌ FILE_KEY_MISSING", {
+        postId: post._id.toString(),
+        filekey: post.filekey,
+        filename: post.filename
+    });
 
-            return res.status(404).send("FILE_KEY_MISSING");
-        }
+    return res.status(404).send("FILE_KEY_MISSING");
+}
 
-        console.log("==========================================");
-        console.log("🎬 MEDIA REQUEST");
-        console.log("Post ID:", post._id.toString());
-        console.log("Buyer:", cleaned);
-        console.log("Original S3 Key:", originalKey);
-        console.log("==========================================");
+console.log("==========================================");
+console.log("🎬 MEDIA REQUEST");
+console.log("Post ID:", post._id.toString());
+console.log("Buyer:", cleaned);
+console.log("Original S3 Key:", originalKey);
+console.log("==========================================");
+
+
 
         // ============================================================
         // 5. VERIFY ORIGINAL FILE EXISTS IN S3
@@ -3848,7 +3850,7 @@ app.get('/api/media/:postId', async (req, res) => {
             );
 
             // ========================================================
-            // 8C. DOWNLOAD ORIGINAL VIDEO
+            // 8C. DOWNLOAD ORIGINAL FILE
             // ========================================================
             const response = await fetch(originalUrl);
 
@@ -3887,7 +3889,57 @@ app.get('/api/media/:postId', async (req, res) => {
             );
             console.log("🎬 INPUT FILE:", tempInput);
 
+ // ======================================================
+// MEDIA TYPE ROUTING
+// ======================================================
 
+const mediaType = (post.mime || "").toLowerCase();
+
+console.log("📁 MIME TYPE:", mediaType);
+
+
+// ======================================================
+// IMAGE → JIMP
+// ======================================================
+
+if (mediaType.startsWith("image/")) {
+
+    console.log("🖼️ IMAGE DETECTED → JIMP");
+
+    // PUT YOUR JIMP WATERMARK LOGIC HERE
+
+}
+
+
+// ======================================================
+// VIDEO → FFMPEG
+// ======================================================
+
+if (mediaType.startsWith("video/")) {
+
+    console.log("🎬 VIDEO DETECTED → FFMPEG");
+
+    // YOUR EXISTING FFMPEG WATERMARK LOGIC GOES HERE
+
+}
+
+
+// ======================================================
+// AUDIO → DIRECT DELIVERY
+// ======================================================
+
+if (mediaType.startsWith("audio/")) {
+
+    console.log("🎵 AUDIO DETECTED → DIRECT DELIVERY");
+
+    const cloudFrontUrl =
+        `https://${process.env.CLOUDFRONT_DOMAIN}/${originalKey}`;
+
+    return res.redirect(302, cloudFrontUrl);
+}
+
+
+return res.status(415).send("UNSUPPORTED_MEDIA_TYPE");
             // ========================================================
             // 8D. APPLY WATERMARK WITH FFMPEG
             // ========================================================
@@ -3895,7 +3947,7 @@ app.get('/api/media/:postId', async (req, res) => {
 await new Promise((resolve, reject) => {
 
     const watermarkText =
-        `INFLUENSA | NODE:${idppAnonymize(cleaned)}`;
+        `INFLUENSA | NODE-${idppAnonymize(cleaned)}`;
 
     console.log("🎬 Starting FFmpeg watermark...");
     console.log("🎬 Input:", tempInput);
