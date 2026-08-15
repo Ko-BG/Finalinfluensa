@@ -3179,8 +3179,22 @@ app.post('/api/posts', upload.any(), async (req, res) => {
       return res.status(400).json({ error: "TITLE_AND_OWNER_REQUIRED" });
     }
 
-    const cleanedOwner = cleanPhone(owner);
-    const files = req.files;
+  const cleanedOwner = cleanPhone(owner);
+const files = req.files;
+
+console.log("========== UPLOAD DEBUG ==========");
+console.log(
+  files.map(f => ({
+    fieldname: f.fieldname,
+    originalname: f.originalname,
+    filename: f.filename,
+    key: f.key,
+    location: f.location,
+    bucket: f.bucket
+  }))
+);
+console.log("==================================");
+
 
     // 2. Safe duplicate check (Fixed to prevent buffer crashes)
     let contentHash = null;
