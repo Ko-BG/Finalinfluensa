@@ -3786,66 +3786,49 @@ app.get('/api/media/:postId', async (req, res) => {
             // 8D. APPLY WATERMARK WITH FFMPEG
             // ========================================================
             await new Promise((resolve, reject) => {
+    const watermarkText =
+        `INFLUENSA | NODE:${idppAnonymize(cleaned)}`;
 
-                ffmpeg(tempInput)
-                    .videoFilters({
-                        filter: "drawtext",
-                        options: {
-                            text:
-                                `INFLUENSA | NODE:${idppAnonymize(cleaned)}`,
-
-                            fontcolor: "white@0.45",
-
-                            fontsize: 20,
-
-                            x: "w-tw-20",
-
-                            y: "h-th-20",
-
-                            box: 1,
-
-                            boxcolor: "black@0.35"
-                        }
-                    })
-
-                    .outputOptions(
-                        "-movflags +faststart"
-                    )
-
-                    .on("start", commandLine => {
-                        console.log(
-                            "🎥 FFmpeg started:",
-                            commandLine
-                        );
-                    })
-
-                    .on("progress", progress => {
-                        if (progress.percent) {
-                            console.log(
-                                `FFmpeg progress: ${progress.percent.toFixed(1)}%`
-                            );
-                        }
-                    })
-
-                    .on("end", () => {
-                        console.log(
-                            "✅ FFmpeg watermark completed"
-                        );
-
-                        resolve();
-                    })
-
-                    .on("error", error => {
-                        console.error(
-                            "❌ FFmpeg error:",
-                            error
-                        );
-
-                        reject(error);
-                    })
-
-                    .save(tempOutput);
-            });
+    ffmpeg(tempInput)
+        .videoFilters([
+            {
+                filter: 'drawtext',
+                options: {
+                    text: watermarkText,
+                    fontcolor: 'white@0.45',
+                    fontsize: 20,
+                    x: 'w-tw-20',
+                    y: 'h-th-20',
+                    box: 1,
+                    boxcolor: 'black@0.35',
+                    boxborderw: 6
+                }
+            }
+        ])
+        .outputOptions([
+            '-c:v libx264',
+            '-preset veryfast',
+            '-crf 23',
+            '-pix_fmt yuv420p',
+            '-c:a aac',
+            '-movflags +faststart'
+        ])
+        .on('start', commandLine => {
+            console.log('🎬 FFmpeg command:', commandLine);
+        })
+        .on('stderr', line => {
+            console.log('FFmpeg:', line);
+        })
+        .on('end', () => {
+            console.log('✅ FFmpeg watermark completed');
+            resolve();
+        })
+        .on('error', err => {
+            console.error('❌ FFmpeg error:', err);
+            reject(err);
+        })
+        .save(tempOutput);
+});
 
             // ========================================================
             // 8E. VERIFY OUTPUT EXISTS
