@@ -3785,9 +3785,9 @@ app.get('/api/media/:postId', async (req, res) => {
             // ========================================================
             // 8D. APPLY WATERMARK WITH FFMPEG
             // ========================================================
-            await new Promise((resolve, reject) => {
-    const watermarkText =
-        `INFLUENSA | NODE:${idppAnonymize(cleaned)}`;
+          Await new Promise((resolve, reject) => {
+    const rawWatermark = `INFLUENSA | NODE:${idppAnonymize(cleaned)}`;
+    const watermarkText = rawWatermark.replace(/\\/g, '\\\\').replace(/:/g, '\\:');
 
     ffmpeg(tempInput)
         .videoFilters([
