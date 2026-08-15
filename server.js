@@ -3179,22 +3179,22 @@ app.post('/api/posts', upload.any(), async (req, res) => {
       return res.status(400).json({ error: "TITLE_AND_OWNER_REQUIRED" });
     }
 
-  const cleanedOwner = cleanPhone(owner);
-const files = req.files;
+    const cleanedOwner = cleanPhone(owner);
+    const files = req.files;
 
-console.log("========== UPLOAD DEBUG ==========");
-console.log(
-  files.map(f => ({
-    fieldname: f.fieldname,
-    originalname: f.originalname,
-    filename: f.filename,
-    key: f.key,
-    location: f.location,
-    bucket: f.bucket
-  }))
-);
-console.log("==================================");
-
+    // Upload debug - confirms multer-s3 returned the S3 key
+    console.log("========== UPLOAD DEBUG ==========");
+    console.log(
+      files.map(f => ({
+        fieldname: f.fieldname,
+        originalname: f.originalname,
+        filename: f.filename,
+        key: f.key,
+        location: f.location,
+        bucket: f.bucket
+      }))
+    );
+    console.log("==================================");
 
     // 2. Safe duplicate check (Fixed to prevent buffer crashes)
     let contentHash = null;
@@ -3260,21 +3260,35 @@ console.log("==================================");
     // 4. Prepare files metadata
     //
     // IMPORTANT:
-    // f.key is the actual S3 object key when using multer-s3.
+    // With multer-s3, f.key is the actual S3 object key.
     //
     const fileMeta = files.map(f => ({
       filename: f.filename || f.originalname,
       originalname: f.originalname,
-      key: f.key || f.filename || f.originalname,
+      key: f.key,
       mime: f.mimetype,
       size: f.size
     }));
 
-    // Actual S3 key for the primary/original file
-    const primaryFileKey =
-      files[0].key ||
-      files[0].filename ||
-      files[0].originalname;
+    // The actual S3 key for the primary/original file.
+    // Do NOT fall back to originalname because that may not
+    // correspond to the actual object stored in S3.
+    const primaryFileKey = files[0].key;
+
+    if (!primaryFileKey) {
+      console.error("❌ S3 KEY MISSING:", {
+        fieldname: files[0].fieldname,
+        originalname: files[0].originalname,
+        filename: files[0].filename,
+        location: files[0].location,
+        bucket: files[0].bucket
+      });
+
+      return res.status(500).json({
+        error: "S3_KEY_MISSING",
+        message: "Upload completed but no S3 object key was returned."
+      });
+    }
 
     // 5. Create the post
     const post = await Post.create({
@@ -3285,12 +3299,15 @@ console.log("==================================");
       files: fileMeta,
 
       // IMPORTANT:
-      // This is what /api/media/:postId uses to retrieve
-      // the original object from S3.
+      // Store the actual S3 key.
+      // /api/media/:postId uses post.filekey
+      // to retrieve the original object.
       filekey: primaryFileKey,
 
       mime: files[0].mimetype,
 
+      // multer-s3 does not necessarily provide filename,
+      // so preserve the original filename as the fallback.
       filename:
         files[0].filename ||
         files[0].originalname,
