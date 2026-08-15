@@ -3743,13 +3743,22 @@ console.log("==========================================");
         // 6. WATERMARK KEY
         // One watermarked copy per authorized phone/buyer.
         // ============================================================
-        const watermarkKey =
-            `watermarked/${post._id}_${cleaned}.mp4`;
+      const mime = (post.mime || "").toLowerCase();
 
-        const finalKey = watermarkKey;
+let extension = "bin";
 
-        console.log("Watermark S3 Key:", watermarkKey);
+if (mime.startsWith("image/")) {
+    extension = mime.split("/")[1] || "jpg";
+} else if (mime.startsWith("video/")) {
+    extension = "mp4";
+} else if (mime.startsWith("audio/")) {
+    extension = mime.split("/")[1] || "mp3";
+}
 
+const watermarkKey =
+    `watermarked/${post._id}_${cleaned}.${extension}`;
+
+console.log("💧 Watermark Key:", watermarkKey);
         // ============================================================
         // 7. CHECK IF WATERMARKED VERSION ALREADY EXISTS
         // ============================================================
@@ -3839,15 +3848,15 @@ console.log("==========================================");
             // ========================================================
             const timestamp = Date.now();
 
-            tempInput = path.join(
-                "/tmp",
-                `in_${post._id}_${timestamp}.mp4`
-            );
+          const tempInput = path.join(
+    '/tmp',
+    `in_${Date.now()}.${extension}`
+);
 
-            tempOutput = path.join(
-                "/tmp",
-                `out_${post._id}_${timestamp}.mp4`
-            );
+const tempOutput = path.join(
+    '/tmp',
+    `out_${Date.now()}.${extension}`
+);
 
             // ========================================================
             // 8C. DOWNLOAD ORIGINAL FILE
