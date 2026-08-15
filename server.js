@@ -3911,14 +3911,45 @@ console.log("📁 MIME TYPE:", mediaType);
 // IMAGE → JIMP
 // ======================================================
 
-if (mediaType.startsWith("image/")) {
+if (post.mime?.startsWith('image/')) {
 
     console.log("🖼️ IMAGE DETECTED → JIMP");
+    console.log("🖼️ Jimp input:", tempInput);
+    console.log("🖼️ Jimp output:", tempOutput);
 
-    // PUT YOUR JIMP WATERMARK LOGIC HERE
+    try {
+        console.log("🖼️ Jimp: reading image...");
 
+        const image = await Jimp.read(tempInput);
+
+        console.log("🖼️ Jimp: image loaded");
+        console.log(
+            "🖼️ Dimensions:",
+            image.bitmap.width,
+            "x",
+            image.bitmap.height
+        );
+
+        const watermarkText =
+            `INFLUENSA | NODE:${idppAnonymize(cleaned)}`;
+
+        console.log("🖼️ Jimp: applying watermark...");
+
+        // Your Jimp watermark code goes here
+
+        console.log("🖼️ Jimp: writing output...");
+
+        await image.writeAsync(tempOutput);
+
+        console.log("✅ Jimp: output written");
+
+    } catch (jimpErr) {
+
+        console.error("❌ JIMP FAILED:", jimpErr);
+
+        return res.status(500).send("IMAGE_WATERMARK_FAILED");
+    }
 }
-
 
 // ======================================================
 // VIDEO → FFMPEG
