@@ -4058,8 +4058,7 @@ try {
             // ========================================================
             // 8F. UPLOAD WATERMARKED VIDEO TO S3
             // ========================================================
-            const fileContent =
-                fs.readFileSync(tempOutput);
+           
 
             await s3.send(
                 new PutObjectCommand({
