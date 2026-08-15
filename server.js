@@ -3887,81 +3887,160 @@ app.get('/api/media/:postId', async (req, res) => {
             );
             console.log("🎬 INPUT FILE:", tempInput);
 
-await new Promise((resolve, reject) => {
-    ffmpeg.ffprobe(tempInput, (err, metadata) => {
-        if (err) {
-            console.error("❌ FFprobe error:", err);
-            return reject(err);
-        }
 
-        console.log("========== VIDEO INFO ==========");
-        console.log(JSON.stringify({
-            format: metadata.format,
-            streams: metadata.streams?.map(s => ({
-                index: s.index,
-                codec_name: s.codec_name,
-                codec_type: s.codec_type,
-                width: s.width,
-                height: s.height,
-                pix_fmt: s.pix_fmt,
-                r_frame_rate: s.r_frame_rate,
-                avg_frame_rate: s.avg_frame_rate,
-                duration: s.duration
-            }))
-        }, null, 2));
-        console.log("================================");
-
-        resolve();
-    });
-});
             // ========================================================
             // 8D. APPLY WATERMARK WITH FFMPEG
             // ========================================================
-          await new Promise((resolve, reject) => {
-    const rawWatermark = `INFLUENSA | NODE:${idppAnonymize(cleaned)}`;
-    const watermarkText = rawWatermark.replace(/\\/g, '\\\\').replace(/:/g, '\\:');
+        
+await new Promise((resolve, reject) => {
+
+    const watermarkText =
+        `INFLUENSA | NODE:${idppAnonymize(cleaned)}`;
+
+    console.log("🎬 Starting FFmpeg watermark...");
+    console.log("🎬 Input:", tempInput);
+    console.log("🎬 Output:", tempOutput);
 
     ffmpeg(tempInput)
+
+        // Explicitly normalize the decoded video before drawtext.
+        // This allows FFmpeg to initialize the filter graph with
+        // a predictable pixel format while keeping the ORIGINAL
+        // video dimensions dynamic.
         .videoFilters([
+            {
+                filter: 'format',
+                options: 'yuv420p'
+            },
             {
                 filter: 'drawtext',
                 options: {
                     text: watermarkText,
-                    fontcolor: 'white@0.45',
+                    fontfile: '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+
+                    // Keep this fixed; it does NOT fix the video resolution.
                     fontsize: 20,
+
+                    fontcolor: 'white@0.45',
+
+                    // These remain completely dynamic.
                     x: 'w-tw-20',
                     y: 'h-th-20',
+
                     box: 1,
                     boxcolor: 'black@0.35',
                     boxborderw: 6
                 }
             }
         ])
+
+        // Explicit video/audio mapping and compatible output.
         .outputOptions([
+            '-map 0:v:0',
+            '-map 0:a?',
+
             '-c:v libx264',
             '-preset veryfast',
             '-crf 23',
+
+            // Force browser-compatible output.
             '-pix_fmt yuv420p',
+
             '-c:a aac',
-            '-movflags +faststart'
+            '-b:a 128k',
+
+            '-map_metadata 0',
+
+            // Web-compatible MP4.
+            '-movflags +faststart',
+
+            // Do not force a fixed frame rate.
+            '-fps_mode vfr'
         ])
+
         .on('start', commandLine => {
-            console.log('🎬 FFmpeg command:', commandLine);
+            console.log("🎬 FFmpeg command:");
+            console.log(commandLine);
         })
+
         .on('stderr', line => {
-            console.log('FFmpeg:', line);
+            console.log("FFmpeg:", line);
         })
+
         .on('end', () => {
-            console.log('✅ FFmpeg watermark completed');
+            console.log("✅ FFmpeg watermark completed successfully");
             resolve();
         })
+
         .on('error', err => {
-            console.error('❌ FFmpeg error:', err);
+            console.error("❌ FFmpeg FAILED:", err.message);
             reject(err);
         })
+
         .save(tempOutput);
 });
 
+
+// 4. Verify FFmpeg actually produced the output
+
+if (!fs.existsSync(tempOutput)) {
+    throw new Error("FFMPEG_OUTPUT_MISSING");
+}
+
+const outputStats = fs.statSync(tempOutput);
+
+if (outputStats.size <= 0) {
+    throw new Error("FFMPEG_OUTPUT_EMPTY");
+}
+
+console.log(
+    `✅ FFmpeg output verified: ${outputStats.size} bytes`
+);
+
+
+// 5. Upload watermarked version to S3
+
+const fileContent = fs.readFileSync(tempOutput);
+
+await s3.send(
+    new PutObjectCommand({
+        Bucket: process.env.AWS_S3_BUCKET_NAME,
+        Key: watermarkKey,
+        Body: fileContent,
+        ContentType: 'video/mp4'
+    })
+);
+
+console.log(
+    `✅ Watermarked version uploaded: ${watermarkKey}`
+);
+
+
+// 6. NOW clean up temporary files
+
+try {
+    if (fs.existsSync(tempInput)) {
+        fs.unlinkSync(tempInput);
+        console.log("🧹 Removed:", tempInput);
+    }
+} catch (e) {
+    console.warn(
+        "⚠️ Could not remove temp input:",
+        e.message
+    );
+}
+
+try {
+    if (fs.existsSync(tempOutput)) {
+        fs.unlinkSync(tempOutput);
+        console.log("🧹 Removed:", tempOutput);
+    }
+} catch (e) {
+    console.warn(
+        "⚠️ Could not remove temp output:",
+        e.message
+    );
+}
             // ========================================================
             // 8E. VERIFY OUTPUT EXISTS
             // ========================================================
