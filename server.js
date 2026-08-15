@@ -3935,13 +3935,20 @@ if (post.mime?.startsWith('image/')) {
 
         console.log("🖼️ Jimp: applying watermark...");
 
-        // Your Jimp watermark code goes here
+// your watermark operations here
 
-        console.log("🖼️ Jimp: writing output...");
+console.log("🖼️ Jimp: writing output...");
 
-        await image.writeAsync(tempOutput);
+await new Promise((resolve, reject) => {
+    image.write(tempOutput, err => {
+        if (err) {
+            return reject(err);
+        }
+        resolve();
+    });
+});
 
-        console.log("✅ Jimp: output written");
+console.log("✅ Jimp: output written");
 
     } catch (jimpErr) {
 
