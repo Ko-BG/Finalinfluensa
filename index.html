@@ -2455,54 +2455,205 @@ async function generateStoreRedemption() {
 }
 async function finalizeWithdrawal() {
     const btn = document.getElementById('withdrawSubmitBtn');
-    const phoneInput = document.getElementById('payoutPhone').value.trim();
-    const amountInput = parseFloat(document.getElementById('withdrawAmount').value);
 
-    // Basic client-side validations
+    const phoneInput =
+        document.getElementById('payoutPhone')?.value.trim();
+
+    const amountInput =
+        Number(
+            document.getElementById('withdrawAmount')?.value
+        );
+
+    // =========================================================
+    // 1. CLIENT VALIDATION
+    // =========================================================
+
     if (!phoneInput) {
-        showToast("Please enter a valid M-PESA phone number.");
+        showToast("Please enter your M-PESA phone number.");
         return;
     }
 
-    if (!amountInput || amountInput < 10) { // Standard M-PESA B2C min limit
+    if (
+        !Number.isFinite(amountInput) ||
+        amountInput < 10
+    ) {
         showToast("Minimum withdrawal amount is KES 10.");
         return;
     }
 
-    const payload = {
-        identity: currentUser.identity,
-        phone: phoneInput,       // Expected formats: 0712345678, 254712345678, etc.
-        amount: amountInput,
-        currency: "KES"
-    };
+    // Prevent invalid decimal values
+    const amount = Math.round(amountInput * 100) / 100;
 
-    btn.innerText = "Processing M-PESA Transfer...";
+    // =========================================================
+    // 2. PREVENT DOUBLE SUBMISSION
+    // =========================================================
+
+    if (btn.disabled) return;
+
     btn.disabled = true;
+    btn.innerText = "Processing M-PESA Transfer...";
 
     try {
-        const res = await fetch(`${API_URL}/withdraw/mpesa`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-        
-        const data = await res.json();
 
-        if (res.ok) {
-            showToast("Withdrawal Sent: Check your phone for M-PESA notification.");
-            document.getElementById('withdrawalModal').classList.add('hidden');
-            updateWalletUI();
-        } else {
-            showToast(data.error || "M-PESA Payout Failed. Please try again.");
+        // =====================================================
+        // 3. PRODUCTION REQUEST
+        //
+        // Authentication should come from your login/session.
+        // Do NOT trust currentUser.identity for authorization.
+        // =====================================================
+
+        const response = await fetch(
+            `${API_URL}/api/mpesa/withdraw`,
+            {
+                method: "POST",
+
+                headers: {
+                    "Content-Type": "application/json"
+                },
+
+                credentials: "include",
+
+                body: JSON.stringify({
+                    phone: phoneInput,
+                    amount: amount
+                })
+            }
+        );
+
+        // =====================================================
+        // 4. PARSE SERVER RESPONSE
+        // =====================================================
+
+        let data = {};
+
+        try {
+            data = await response.json();
+        } catch {
+            data = {
+                error: "INVALID_SERVER_RESPONSE"
+            };
         }
-    } catch (e) {
-        showToast("Network Error: Could not reach payout server.");
+
+        console.log(
+            "💸 Withdrawal response:",
+            data
+        );
+
+        // =====================================================
+        // 5. WITHDRAWAL ACCEPTED
+        // =====================================================
+
+        if (
+            response.ok &&
+            data.success
+        ) {
+
+            showToast(
+                `KES ${amount.toFixed(2)} withdrawal initiated.`
+            );
+
+            const modal =
+                document.getElementById(
+                    'withdrawalModal'
+                );
+
+            if (modal) {
+                modal.classList.add('hidden');
+            }
+
+            // Refresh wallet
+            if (
+                typeof updateWalletUI === "function"
+            ) {
+                await updateWalletUI();
+            }
+
+            return;
+        }
+
+        // =====================================================
+        // 6. SERVER ERRORS
+        // =====================================================
+
+        switch (data.error) {
+
+            case "BELOW_MINIMUM":
+
+                showToast(
+                    "Minimum withdrawal amount is KES 10."
+                );
+
+                break;
+
+            case "INSUFFICIENT_BALANCE":
+
+                showToast(
+                    "Insufficient available balance."
+                );
+
+                break;
+
+            case "BALANCE_CHANGED_RETRY_WITHDRAWAL":
+
+                showToast(
+                    "Your balance changed. Please try again."
+                );
+
+                break;
+
+            case "INVALID_WITHDRAWAL_REQUEST":
+
+                showToast(
+                    "Please check your withdrawal details."
+                );
+
+                break;
+
+            case "USER_NOT_FOUND":
+
+                showToast(
+                    "Your account could not be verified."
+                );
+
+                break;
+
+            case "MPESA_B2C_REQUEST_FAILED":
+
+            case "MPESA_B2C_WITHDRAWAL_FAILED":
+
+                showToast(
+                    "M-PESA could not initiate the payout. Please try again."
+                );
+
+                break;
+
+            default:
+
+                showToast(
+                    data.error ||
+                    "Withdrawal could not be processed."
+                );
+        }
+
+    } catch (error) {
+
+        console.error(
+            "❌ Production withdrawal error:",
+            error
+        );
+
+        showToast(
+            "Network error. Please check your connection and try again."
+        );
+
     } finally {
-        btn.innerText = "Request M-PESA Payout";
+
         btn.disabled = false;
+
+        btn.innerText =
+            "Request M-PESA Payout";
     }
 }
-
 // INJECTED: RESELL MODAL INTERACTIVE LOGIC PIPELINE
 function openResellModal(postId, postTitle) {
     selectedResellPostId = postId;
