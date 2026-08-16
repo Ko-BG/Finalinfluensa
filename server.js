@@ -710,8 +710,7 @@ const transactionSchema = new mongoose.Schema({
     userPhone: String,
 
     creatorId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "User",
+        type:String,
         required: true,
         index: true
     },
@@ -2144,6 +2143,7 @@ const triggerStkPush = async (phone, amount, postId, type, handshakeId = null) =
         await Transaction.create({
             checkoutID: response.data.CheckoutRequestID,
             postID: postId, 
+            creatorId: creatorIdentity,
             userPhone: phone, 
             amountPaid: amount, 
             type, 
@@ -3320,7 +3320,7 @@ if (!creator) {
                 split.creatorAmount;
 
             transaction.creatorId =
-                creator._id;
+                creatorIdentity;
 
             transaction.receiptNumber =
                 receiptNumber;
