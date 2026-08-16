@@ -3911,7 +3911,7 @@ console.log("📁 MIME TYPE:", mediaType);
 // IMAGE → JIMP
 // ======================================================
 
-if (post.mime?.startsWith('image/')) {
+if (mediaType.startsWith('image/')) {
 
     console.log("🖼️ IMAGE DETECTED → JIMP");
     console.log("🖼️ Jimp input:", tempInput);
@@ -3965,12 +3965,86 @@ console.log("✅ Jimp: output written");
 if (mediaType.startsWith("video/")) {
 
     console.log("🎬 VIDEO DETECTED → FFMPEG");
+    console.log("🎬 Input:", tempInput);
+    console.log("🎬 Output:", tempOutput);
 
-    // YOUR EXISTING FFMPEG WATERMARK LOGIC GOES HERE
+    const watermarkText =
+        `INFLUENSA | NODE:${idppAnonymize(cleaned)}`;
 
+    await new Promise((resolve, reject) => {
+
+        ffmpeg(tempInput)
+
+            .videoFilters([
+                {
+                    filter: 'scale',
+                    options: {
+                        w: 'trunc(iw/2)*2',
+                        h: 'trunc(ih/2)*2'
+                    }
+                },
+                {
+                    filter: 'drawtext',
+                    options: {
+                        text: watermarkText,
+                        fontfile: '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+                        fontsize: 24,
+                        fontcolor: 'white@0.45',
+                        x: 'w-tw-20',
+                        y: 'h-th-20',
+                        box: 1,
+                        boxcolor: 'black@0.35',
+                        boxborderw: 6
+                    }
+                }
+            ])
+
+            .outputOptions([
+                '-map 0:v:0',
+                '-map 0:a?',
+                '-c:v libx264',
+                '-preset veryfast',
+                '-crf 23',
+                '-pix_fmt yuv420p',
+                '-c:a aac',
+                '-b:a 128k',
+                '-movflags +faststart'
+            ])
+
+            .on('start', command => {
+                console.log("🎬 FFMPEG START:");
+                console.log(command);
+            })
+
+            .on('stderr', line => {
+                console.log("FFMPEG:", line);
+            })
+
+            .on('end', () => {
+                console.log("✅ FFMPEG COMPLETE");
+                resolve();
+            })
+
+            .on('error', err => {
+                console.error("❌ FFMPEG FAILED:", err.message);
+                reject(err);
+            })
+
+            .save(tempOutput);
+    });
+
+    if (!fs.existsSync(tempOutput)) {
+        throw new Error("FFMPEG_OUTPUT_MISSING");
+    }
+
+    const stats = fs.statSync(tempOutput);
+
+    if (stats.size === 0) {
+        throw new Error("FFMPEG_OUTPUT_EMPTY");
+    }
+
+    console.log(`✅ FFMPEG OUTPUT: ${stats.size} bytes`);
 }
-
-
 // ======================================================
 // AUDIO → DIRECT DELIVERY
 // ======================================================
