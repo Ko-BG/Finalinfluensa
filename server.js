@@ -1930,14 +1930,17 @@ const triggerStkPush = async (phone, amount, postId, type, handshakeId = null) =
 };
 async function triggerB2C(phone, amount, remark = "iNFLUENSA Payout") {
     const cleaned = cleanPhone(phone);
+
+    // Use environment helper to switch dynamically between Sandbox & Production
+    const baseUrl = getMpesaBaseUrl(); 
     
     const payload = {
         InitiatorName: process.env.MPESA_INITIATOR_NAME,
         SecurityCredential: process.env.MPESA_SECURITY_CREDENTIAL,
         CommandID: "BusinessPayment",
         Amount: Math.ceil(amount),
-        PartyA: process.env.MPESA_SHORTCODE,          // Your Paybill / Till
-        PartyB: cleaned,                              // Seller's phone
+        PartyA: process.env.MPESA_B2C_SHORTCODE || process.env.MPESA_SHORTCODE, // B2C Shortcode
+        PartyB: cleaned,                              // Recipient phone (2547XXXXXXXX)
         Remarks: remark,
         QueueTimeOutURL: `${process.env.BASE_URL}/api/mpesa/b2c/timeout`,
         ResultURL: `${process.env.BASE_URL}/api/mpesa/b2c/result`,
@@ -1945,20 +1948,24 @@ async function triggerB2C(phone, amount, remark = "iNFLUENSA Payout") {
     };
 
     try {
-        const auth = await getMpesaToken(); // your existing token function
+        const auth = await getMpesaToken();
         const response = await axios.post(
-            "https://api.safaricom.co.ke/mpesa/b2c/v1/paymentrequest",
+            `${baseUrl}/mpesa/b2c/v1/paymentrequest`,
             payload,
-            { headers: { Authorization: `Bearer ${auth}` } }
+            { 
+                headers: { Authorization: `Bearer ${auth}` },
+                timeout: 15000 
+            }
         );
 
-        console.log("🚀 B2C initiated:", response.data);
+        console.log("🚀 B2C initiated successfully:", response.data);
         return response.data;
     } catch (err) {
         console.error("B2C Trigger Error:", err.response?.data || err.message);
         throw err;
     }
 }
+
 const triggerFlutterwavePush = async (phone, amountInKES, postId, type, handshakeId = null) => {
     try {
         // ✅ Live currency + rate
