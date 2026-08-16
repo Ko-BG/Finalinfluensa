@@ -1863,69 +1863,355 @@ const getMpesaToken = async () => {
     }
 };
 
-const triggerStkPush = async (phone, amount, postId, type, handshakeId = null) => {
-    try {
-        const token = await getMpesaToken();
-        const timestamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14);
-        
-        const shortCode = (process.env.MPESA_SHORTCODE || "").trim();
-        const passKey = (process.env.MPESA_PASSKEY || "").trim();
-        const callbackUrl = (process.env.MPESA_CALLBACK_URL || "").trim();
+const triggerStkPush = async (
+    phone,
+    amount,
+    postId,
+    type = 'unlock',
+    handshakeId = null
+) => {
 
-        if (!shortCode || !passKey || !callbackUrl) {
-            throw new Error("MISSING_MPESA_CONFIG");
+    try {
+
+        // =====================================================
+        // 1. GET M-PESA ACCESS TOKEN
+        // =====================================================
+
+        const token = await getMpesaToken();
+
+        if (!token) {
+            throw new Error("MPESA_TOKEN_MISSING");
         }
 
-        const password = Buffer.from(`${shortCode}${passKey}${timestamp}`).toString('base64');
-        
+
+        // =====================================================
+        // 2. NORMALIZE PHONE NUMBER
+        // =====================================================
+
+        const customerPhone = cleanPhone(phone);
+
+        if (!customerPhone) {
+            throw new Error("INVALID_PHONE");
+        }
+
+        if (!/^2547\d{8}$/.test(customerPhone)) {
+            throw new Error(`INVALID_MPESA_PHONE: ${customerPhone}`);
+        }
+
+
+        // =====================================================
+        // 3. VALIDATE AMOUNT
+        // =====================================================
+
+        const paymentAmount = Math.max(
+            1,
+            Math.round(Number(amount))
+        );
+
+        if (!Number.isFinite(paymentAmount)) {
+            throw new Error("INVALID_PAYMENT_AMOUNT");
+        }
+
+
+        // =====================================================
+        // 4. M-PESA CONFIGURATION
+        // =====================================================
+
+        const shortCode =
+            (process.env.MPESA_SHORTCODE || "").trim();
+
+        const passKey =
+            (process.env.MPESA_PASSKEY || "").trim();
+
+        const callbackUrl =
+            (process.env.MPESA_CALLBACK_URL || "").trim();
+
+        /*
+         * IMPORTANT:
+         *
+         * For CustomerBuyGoodsOnline:
+         *
+         * PartyB should be your actual M-PESA Till Number.
+         *
+         * Do NOT leave a random hard-coded number here.
+         */
+
+        const tillNumber =
+            (process.env.MPESA_TILL_NUMBER || shortCode).trim();
+
+
+        if (!shortCode) {
+            throw new Error("MISSING_MPESA_SHORTCODE");
+        }
+
+        if (!passKey) {
+            throw new Error("MISSING_MPESA_PASSKEY");
+        }
+
+        if (!callbackUrl) {
+            throw new Error("MISSING_MPESA_CALLBACK_URL");
+        }
+
+        if (!tillNumber) {
+            throw new Error("MISSING_MPESA_TILL_NUMBER");
+        }
+
+
+        // =====================================================
+        // 5. GENERATE TIMESTAMP
+        // =====================================================
+
+        const timestamp = new Date()
+            .toISOString()
+            .replace(/[-:T.]/g, '')
+            .slice(0, 14);
+
+
+        // =====================================================
+        // 6. GENERATE PASSWORD
+        // =====================================================
+
+        const password = Buffer
+            .from(
+                `${shortCode}${passKey}${timestamp}`
+            )
+            .toString('base64');
+
+
+        // =====================================================
+        // 7. BUILD ACCOUNT REFERENCE
+        // =====================================================
+
+        const accountReference =
+            `IP-${postId.toString().slice(-6).toUpperCase()}`;
+
+
+        // =====================================================
+        // 8. BUILD STK PAYLOAD
+        // =====================================================
+
         const payload = {
-            "BusinessShortCode": shortCode,
-            "Password": password,
-            "Timestamp": timestamp,
-            "TransactionType": "CustomerBuyGoodsOnline",
-            "Amount": Math.round(amount), 
-            "PartyA": phone,
-            "PartyB": '3422513',
-            "PhoneNumber": phone,
-            "CallBackURL": callbackUrl,
-            "AccountReference": `IP-${postId.toString().slice(-6).toUpperCase()}`,
-            "TransactionDesc": `iNFLUENSA ${type.toUpperCase()}`
+
+            BusinessShortCode: shortCode,
+
+            Password: password,
+
+            Timestamp: timestamp,
+
+            TransactionType: "CustomerBuyGoodsOnline",
+
+            Amount: paymentAmount,
+
+            PartyA: customerPhone,
+
+            PartyB: "3422513",
+
+            PhoneNumber: customerPhone,
+
+            CallBackURL: callbackUrl,
+
+            AccountReference: accountReference,
+
+            TransactionDesc:
+                `iNFLUENSA ${String(type).toUpperCase()}`
         };
 
-        console.log(`🛰️ MPESA: DISPATCHING STK TO ${idppMaskPhone(phone)} | AMT: ${amount}`);
-        console.log("📤 Full Payload:", JSON.stringify(payload, null, 2));
+
+        // =====================================================
+        // 9. LOG REQUEST SAFELY
+        // =====================================================
+
+        console.log("");
+        console.log("==========================================");
+        console.log("🛰️ M-PESA STK PUSH");
+        console.log("==========================================");
+
+        console.log(
+            "Customer:",
+            idppMaskPhone(customerPhone)
+        );
+
+        console.log(
+            "Amount:",
+            paymentAmount
+        );
+
+        console.log(
+            "BusinessShortCode:",
+            shortCode
+        );
+
+        console.log(
+            "Till / PartyB:",
+            tillNumber
+        );
+
+        console.log(
+            "TransactionType:",
+            payload.TransactionType
+        );
+
+        console.log(
+            "Callback:",
+            callbackUrl
+        );
+
+        console.log(
+            "AccountReference:",
+            accountReference
+        );
+
+        console.log("==========================================");
+
+
+        // =====================================================
+        // 10. SEND STK REQUEST
+        // =====================================================
 
         const response = await axios.post(
-            `${getMpesaBaseUrl()}/mpesa/stkpush/v1/processrequest`, 
-            payload, 
-            { 
-                headers: { 'Authorization': `Bearer ${token}` },
-                timeout: 15000 
+
+            `${getMpesaBaseUrl()}/mpesa/stkpush/v1/processrequest`,
+
+            payload,
+
+            {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json"
+                },
+
+                timeout: 15000
             }
         );
 
-        console.log("📥 MPESA Raw Response:", JSON.stringify(response.data, null, 2));
 
-        if (!response.data?.CheckoutRequestID) {
-            throw new Error("GATEWAY_EMPTY_RESPONSE");
+        // =====================================================
+        // 11. LOG M-PESA RESPONSE
+        // =====================================================
+
+        console.log("");
+        console.log("📥 M-PESA RESPONSE:");
+        console.log(
+            JSON.stringify(
+                response.data,
+                null,
+                2
+            )
+        );
+
+
+        // =====================================================
+        // 12. CHECK RESPONSE
+        // =====================================================
+
+        if (
+            !response.data ||
+            !response.data.CheckoutRequestID
+        ) {
+
+            console.error(
+                "❌ M-PESA DID NOT RETURN CHECKOUT REQUEST ID"
+            );
+
+            throw new Error(
+                response.data?.errorMessage ||
+                response.data?.ResponseDescription ||
+                "GATEWAY_EMPTY_RESPONSE"
+            );
         }
 
+
+        const checkoutID =
+            response.data.CheckoutRequestID;
+
+
+        // =====================================================
+        // 13. SAVE PENDING TRANSACTION
+        //
+        // IMPORTANT:
+        // These names match the callback code you showed me:
+        //
+        // transaction.postId
+        // transaction.buyerPhone
+        // =====================================================
+
         await Transaction.create({
-            checkoutID: response.data.CheckoutRequestID,
-            postID: postId, 
-            userPhone: phone, 
-            amountPaid: amount, 
-            type, 
-            gateway: 'mpesa', 
-            currency: 'KES', 
-            handshakeID: handshakeId
+
+            checkoutID,
+
+            postId: postId,
+
+            buyerPhone: customerPhone,
+
+            amountPaid: paymentAmount,
+
+            type,
+
+            gateway: 'mpesa',
+
+            currency: 'KES',
+
+            handshakeID: handshakeId,
+
+            status: 'pending'
         });
-        
+
+
+        console.log(
+            `✅ STK DISPATCHED | CheckoutID: ${checkoutID}`
+        );
+
+
+        // =====================================================
+        // 14. RETURN TO UNLOCK ROUTE
+        // =====================================================
+
         return response.data;
+
+
     } catch (error) {
-        const errorDetail = error.response?.data || error.message;
-        console.error("❌ MPESA STK CRITICAL FAILURE:", JSON.stringify(errorDetail, null, 2));
-        throw new Error(errorDetail?.errorMessage || "STK_PUSH_DISRUPTED");
+
+        console.error("");
+        console.error("==========================================");
+        console.error("❌ M-PESA STK PUSH FAILED");
+        console.error("==========================================");
+
+        if (error.response) {
+
+            console.error(
+                "HTTP STATUS:",
+                error.response.status
+            );
+
+            console.error(
+                "M-PESA ERROR:",
+                JSON.stringify(
+                    error.response.data,
+                    null,
+                    2
+                )
+            );
+
+        } else {
+
+            console.error(
+                "ERROR:",
+                error.message
+            );
+        }
+
+        console.error("==========================================");
+
+
+        const mpesaError =
+            error.response?.data?.errorMessage ||
+            error.response?.data?.ResponseDescription ||
+            error.response?.data?.error ||
+            error.message ||
+            "STK_PUSH_DISRUPTED";
+
+
+        throw new Error(mpesaError);
     }
 };
 async function triggerB2C(phone, amount, remark = "iNFLUENSA Payout") {
