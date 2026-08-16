@@ -3143,9 +3143,11 @@ app.post('/api/mpesa/b2c/timeout', (req, res) => {
     // TODO: Mark transaction for manual review
     return res.status(200).json({ ResultCode: 0, ResultDesc: "Accepted" });
 });
-app.post('/api/nodes/withdraw', async (req, res) => {
+
+app.post('/withdraw/mpesa', async (req, res) => {
+ 
     const { identity, amount } = req.body;
-    const cleaned = cleanPhone(identity);
+    const cleaned = cleanPhone(identity); // Assumes cleanPhone formats to 254XXXXXXXXX
     
     try {
         const user = await User.findOne({ identity: cleaned });
@@ -3153,7 +3155,7 @@ app.post('/api/nodes/withdraw', async (req, res) => {
             return res.status(400).json({ error: "USER_NOT_FOUND" });
         }
 
-        // NEW: Support combined earnings + AFRO balance
+        // Support combined earnings + AFRO balance
         const marketPrice = await calculateCurrentAfroPrice(User);
         const afroValueInKES = (user.afroCoins || 0) * marketPrice.kesRate;
         const totalAvailable = (user.earnings || 0) + afroValueInKES;
@@ -3167,7 +3169,6 @@ app.post('/api/nodes/withdraw', async (req, res) => {
 
         if (amount < 10) return res.status(400).json({ error: "BELOW_MINIMUM" });
 
-        let remaining = amount;
         let afroConverted = 0;
 
         // Auto-convert AFRO if earnings are insufficient
@@ -3177,48 +3178,68 @@ app.post('/api/nodes/withdraw', async (req, res) => {
             
             user.earnings += afroConverted * marketPrice.kesRate;
             user.afroCoins = Number((user.afroCoins - afroConverted).toFixed(4));
-            remaining = user.earnings; // Now covered
         }
 
-        const config = getCurrencyByPhone(cleaned);
-        const payload = {
-            "account_bank": "MPS", 
-            "account_number": cleaned,
-            "amount": amount,
-            "currency": config.code,
-            "narration": "iNFLUENSA_NODE_PAYOUT",
-            "reference": `WD-${Date.now()}-${cleaned.slice(-4)}`
+        // 1. Get Safaricom OAuth Token
+        const accessToken = await getMpesaToken();
+
+        const baseUrl = process.env.MPESA_ENV === 'production' 
+            ? 'https://api.safaricom.co.ke' 
+            : 'https://sandbox.safaricom.co.ke';
+
+        // 2. Safaricom Direct M-PESA B2C Payload
+        const mpesaPayload = {
+            InitiatorName: process.env.MPESA_INITIATOR_NAME,
+            SecurityCredential: process.env.MPESA_SECURITY_CREDENTIAL,
+            CommandID: "BusinessPayment",
+            Amount: Math.floor(amount),
+            PartyA: process.env.MPESA_B2C_SHORTCODE,
+            PartyB: cleaned,
+            Remarks: "iNFLUENSA_NODE_PAYOUT",
+            QueueTimeOutURL: `${process.env.SERVER_URL}/api/mpesa/b2c/timeout`,
+            ResultURL: `${process.env.SERVER_URL}/api/mpesa/b2c/result`,
+            Occasion: `WD-${Date.now()}-${cleaned.slice(-4)}`
         };
 
-        const response = await axios.post("https://api.flutterwave.com/v3/transfers", payload, {
-            headers: { Authorization: `Bearer ${(process.env.FLW_SECRET_KEY || "").trim()}` },
-            timeout: 15000 
-        });
+        // 3. Initiate Transfer via Daraja B2C Endpoint
+        const response = await axios.post(
+            `${baseUrl}/mpesa/b2c/v1/paymentrequest`, 
+            mpesaPayload, 
+            {
+                headers: { Authorization: `Bearer ${accessToken}` },
+                timeout: 15000 
+            }
+        );
 
-        if (response.data.status === "success") {
-            // Deduct from earnings (AFRO already converted above)
+        if (response.data.ResponseCode === "0") {
+            // Deduct net earnings & update converted AFRO balance
+            // Note: Mathematical deduction from earnings matches post-conversion state
+            const netEarningsDeduction = amount - (afroConverted * marketPrice.kesRate);
+
             await User.findOneAndUpdate(
                 { identity: cleaned }, 
                 { 
-                    $inc: { earnings: -amount },
+                    $inc: { earnings: -netEarningsDeduction },
                     $set: { afroCoins: user.afroCoins } 
                 }
             );
 
             res.json({ 
                 success: true, 
-                message: "Withdrawal successful",
+                message: "M-PESA withdrawal initiated successfully",
                 afroConverted: afroConverted.toFixed(4),
-                data: response.data.data 
+                conversationID: response.data.ConversationID,
+                data: response.data 
             });
         } else {
             res.status(500).json({ error: "GATEWAY_TRANSFER_FAILED" });
         }
     } catch (err) { 
-        console.error("Withdrawal error:", err);
+        console.error("M-PESA Withdrawal error:", err.response ? err.response.data : err.message);
         res.status(500).json({ error: "Neural Withdrawal Error" }); 
     }
 });
+
 // === STRIPE CONNECT ONBOARDING (Add this) ===
 app.post('/api/stripe/onboard', async (req, res) => {
     const { identity } = req.body;
