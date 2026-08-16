@@ -3186,24 +3186,25 @@ async function settleSuccessfulContentPurchase({
                 throw new Error("POST_NOT_FOUND");
             }
 
-            // =====================================================
-            // 4. FIND CREATOR USING post.owner
-            // =====================================================
+          // =================================================
+// 4. FIND CREATOR FROM post.owner
+// =================================================
 
-            if (!post.owner) {
-                throw new Error("POST_OWNER_MISSING");
-            }
+if (!post.owner) {
+    throw new Error("POST_OWNER_MISSING");
+}
 
-            const creatorIdentity =
-                cleanPhone(post.owner);
+const creatorIdentity =
+    cleanPhone(post.owner);
 
-            const creator = await User.findOne({
-                identity: creatorIdentity
-            }).session(session);
+const creator =
+    await User.findOne({
+        identity: creatorIdentity
+    }).session(session);
 
-            if (!creator) {
-                throw new Error("CREATOR_NOT_FOUND");
-            }
+if (!creator) {
+    throw new Error("CREATOR_NOT_FOUND");
+}
 
             // =====================================================
             // 5. CALCULATE 8% / 92%
