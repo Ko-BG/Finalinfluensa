@@ -435,41 +435,126 @@
     </div>
 </div>
 
-<div id="withdrawalModal" class="fixed inset-0 bg-black/98 backdrop-blur-2xl hidden z-[120] flex items-center justify-center p-4">
-  <div class="glass p-8 w-full max-w-md border-yellow-500/30">
-      <div class="flex justify-between items-center mb-6">
-          <h3 class="text-2xl font-bold text-yellow-500 uppercase tracking-tighter">Off-Ramp Vault</h3>
-          <button onclick="document.getElementById('withdrawalModal').classList.add('hidden')" class="text-slate-500 hover:text-white">✕</button>
-      </div>
-      <div class="space-y-4">
-          <!-- Available Balance Display -->
-          <div class="bg-white/5 p-4 rounded-xl border border-white/10">
-              <label class="text-[9px] uppercase text-cyan-400 block mb-1">Available for Payout</label>
-              <div id="withdrawableAmount" class="text-2xl font-bold text-white tracking-widest">KES 0.00</div>
-          </div>
+<div id="withdrawalModal"
+     class="fixed inset-0 bg-black/98 backdrop-blur-2xl hidden z-[120] flex items-center justify-center p-4">
 
-          <!-- Withdrawal Amount Input (NEW & CRITICAL) -->
-          <div>
-              <label class="text-[10px] uppercase text-slate-400 block mb-1">Amount to Withdraw (KES)</label>
-              <input id="withdrawAmount" type="number" min="10" placeholder="Min KES 10" class="input-field w-full p-4 rounded-xl text-lg font-bold text-white" />
-          </div>
+    <div class="glass p-8 w-full max-w-md border-yellow-500/30">
 
-          <!-- Phone Number Input -->
-          <div>
-              <label class="text-[10px] uppercase text-slate-400 block mb-1">M-PESA Registered Number</label>
-              <input id="payoutPhone" type="tel" class="input-field w-full p-4 rounded-xl" placeholder="2547XXXXXXXX"/>
-          </div>
+        <!-- HEADER -->
+        <div class="flex justify-between items-center mb-6">
 
-          <!-- Submit Button -->
-          <button onclick="finalizeWithdrawal()" id="withdrawSubmitBtn" class="w-full py-5 bg-yellow-500 text-black font-black uppercase tracking-widest rounded-xl btn-glow mt-4">
-              Request M-PESA Payout
-          </button>
-          
-          <p class="text-[8px] text-center opacity-40 uppercase tracking-widest mt-4">Powered by M-PESA B2C Rails</p>
-      </div>
-  </div>
+            <h3 class="text-2xl font-bold text-yellow-500 uppercase tracking-tighter">
+                Off-Ramp Vault
+            </h3>
+
+            <button
+                type="button"
+                onclick="document.getElementById('withdrawalModal').classList.add('hidden')"
+                class="text-slate-500 hover:text-white">
+                ✕
+            </button>
+
+        </div>
+
+        <div class="space-y-4">
+
+            <!-- AVAILABLE BALANCE -->
+            <div class="bg-white/5 p-4 rounded-xl border border-white/10">
+
+                <label class="text-[9px] uppercase text-cyan-400 block mb-1">
+                    Available for Payout
+                </label>
+
+                <div
+                    id="withdrawableAmount"
+                    class="text-2xl font-bold text-white tracking-widest">
+                    KES 0.00
+                </div>
+
+            </div>
+
+
+            <!-- WITHDRAWAL AMOUNT -->
+            <div>
+
+                <label
+                    for="withdrawAmount"
+                    class="text-[10px] uppercase text-slate-400 block mb-1">
+                    Amount to Withdraw (KES)
+                </label>
+
+                <input
+                    id="withdrawAmount"
+                    type="number"
+                    inputmode="decimal"
+                    min="10"
+                    step="1"
+                    autocomplete="off"
+                    placeholder="Min KES 10"
+                    class="input-field w-full p-4 rounded-xl text-lg font-bold text-white"
+                />
+
+                <p
+                    id="withdrawAmountError"
+                    class="hidden text-[9px] text-red-400 uppercase mt-2">
+                    Enter a valid withdrawal amount.
+                </p>
+
+            </div>
+
+
+            <!-- VERIFIED M-PESA NUMBER -->
+            <div>
+
+                <label
+                    for="payoutPhone"
+                    class="text-[10px] uppercase text-slate-400 block mb-1">
+                    M-PESA Registered Number
+                </label>
+
+                <input
+                    id="payoutPhone"
+                    type="tel"
+                    inputmode="numeric"
+                    autocomplete="tel"
+                    maxlength="13"
+                    placeholder="2547XXXXXXXX"
+                    class="input-field w-full p-4 rounded-xl"
+                />
+
+                <p class="text-[8px] text-slate-500 uppercase mt-2">
+                    Payments are sent through M-PESA B2C to your registered payout number.
+                </p>
+
+            </div>
+
+
+            <!-- SUBMIT -->
+            <button
+                type="button"
+                onclick="finalizeWithdrawal()"
+                id="withdrawSubmitBtn"
+                class="w-full py-5 bg-yellow-500 text-black font-black uppercase tracking-widest rounded-xl btn-glow mt-4">
+
+                Request M-PESA Payout
+
+            </button>
+
+
+            <!-- STATUS -->
+            <div
+                id="withdrawalStatus"
+                class="hidden text-center text-[9px] uppercase tracking-widest">
+            </div>
+
+
+            <p class="text-[8px] text-center opacity-40 uppercase tracking-widest mt-4">
+                Powered by M-PESA 
+            </p>
+
+        </div>
+    </div>
 </div>
-
 <button id="fabButton" onclick="document.getElementById('fabModal').classList.remove('hidden')" class="fixed bottom-8 right-8 w-16 h-16 rounded-full bg-yellow-500 text-black text-3xl font-bold shadow-2xl flex items-center justify-center z-50 btn-glow hidden">+</button>
 <!-- MERCHANT DASHBOARD -->
 <div id="merchantDashboard" class="fixed inset-0 bg-black/95 backdrop-blur-2xl hidden z-[150] flex items-center justify-center p-4">
