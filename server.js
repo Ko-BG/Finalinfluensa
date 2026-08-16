@@ -2143,7 +2143,7 @@ const triggerStkPush = async (phone, amount, postId, type, handshakeId = null) =
         await Transaction.create({
             checkoutID: response.data.CheckoutRequestID,
             postID: postId, 
-            creatorId: creatorPhone,
+            creatorId: cleanPhone(post.owner),
             userPhone: phone, 
             amountPaid: amount, 
             type, 
@@ -3199,7 +3199,7 @@ const creatorIdentity =
 
 const creator =
     await User.findOne({
-        identity: creatorIdentity
+        identity: cleanPhone(post.owner)
     }).session(session);
 
 if (!creator) {
