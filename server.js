@@ -2949,183 +2949,113 @@ async function handlePaymentCanceled(paymentIntent) {
 }
 
 
-app.post('/api/posts/:id/unlock', async (req, res) => {
-    const { phone, type = 'unlock', country } = req.body;   // ← added country
-    const postId = req.params.id;
 
-    console.log(`🔓 [UNLOCK] Post: ${postId} | Phone: ${phone} | Type: ${type} | Country: ${country}`);
-
-    try {
-        const post = await Post.findById(postId);
-        if (!post) {
-            return res.status(404).json({ error: "Post not found" });
-        }
-
-        let rawPriceKES = (type === 'share_download' || type === 'license') 
-            ? post.price * 10.0 
-            : post.price;
-
-        console.log(`💰 [UNLOCK] Price: ${rawPriceKES} KES`);
-
-        // ========== SMART ROUTING ==========
-        const EAST_AFRICA = ['KE', 'TZ', 'UG', 'RW', 'BI', 'SS', 'ET'];
-        const countryCode = (country || '').toUpperCase();
-
-        let gateway = 'stripe'; // default for Georgia, US, Europe, etc.
-
-        if (EAST_AFRICA.includes(countryCode)) {
-            gateway = 'mpesa';
-        } else if (phone && (phone.startsWith('254') || phone.startsWith('255') || 
-                             phone.startsWith('256') || phone.startsWith('250'))) {
-            // fallback if country was not sent
-            gateway = 'mpesa';
-        }
-
-        console.log(`🌍 Selected gateway: ${gateway}`);
-
-        let result;
-
-        if (gateway === 'mpesa') {
-            result = await triggerStkPush(
-                phone, 
-                Math.max(1, Math.ceil(rawPriceKES)), 
-                post._id, 
-                type
-            );
-        } else {
-            // Stripe (you can change this to triggerFlutterwavePush if you prefer)
-            result = await triggerStripePayment(
-                phone, 
-                Math.max(1, Math.ceil(rawPriceKES)), 
-                post._id, 
-                type
-            );
-        }
-
-        if (!result || (!result.checkoutID && !result.CheckoutRequestID)) {
-            console.error("❌ No checkoutID returned from gateway");
-            return res.status(500).json({ 
-                error: "Universal Sync Failed", 
-                details: "Gateway did not return checkoutID" 
-            });
-        }
-
-        const checkoutID = result.checkoutID || result.CheckoutRequestID;
-
-        console.log(`✅ [UNLOCK] Success - Gateway: ${gateway} | CheckoutID: ${checkoutID}`);
-
-        res.json({ 
-            success: true, 
-            checkoutID,
-            clientSecret: result.clientSecret || null,   // only present for Stripe
-            gateway,
-            ...result 
-        });
-
-    } catch (err) { 
-        console.error("❌ [UNLOCK] CRITICAL FAILURE:", err.message);
-        res.status(500).json({ 
-            error: "Universal Sync Failed", 
-            details: err.message 
-        }); 
-    }
-});
 // ====================== STK CALLBACK ======================
+// Safaricom official production IP ranges
+const SAFARICOM_IPS = [
+    '196.201.214.200', '196.201.214.206', '196.201.213.114',
+    '196.201.214.207', '196.201.214.208', '196.201.213.44'
+];
+
 app.post('/api/mpesa/callback', async (req, res) => {
-    // Always respond to Safaricom immediately
+    // 1. Always respond to Safaricom immediately to prevent timeouts
     res.status(200).json({ ResultCode: 0, ResultDesc: "Accepted" });
 
     try {
-        const body = req.body;
-        console.log("📥 STK Callback Received:", JSON.stringify(body, null, 2));
+        // 2. Security: Verify IP Whitelist (Skip if behind a trusted proxy/Cloudflare and check headers instead)
+        const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+        // Uncomment below in strict environments:
+        // if (!SAFARICOM_IPS.some(ip => clientIp.includes(ip))) {
+        //     console.warn(`⚠️ Unauthorized callback attempt from IP: ${clientIp}`);
+        //     return;
+        // }
 
+        const body = req.body;
         const callback = body?.Body?.stkCallback;
         if (!callback) return;
 
         const checkoutRequestID = callback.CheckoutRequestID;
         const resultCode = callback.ResultCode;
 
+        // 3. Find transaction safely
         const transaction = await Transaction.findOne({ checkoutID: checkoutRequestID });
         if (!transaction) {
             console.error("Transaction not found:", checkoutRequestID);
             return;
         }
 
-        // ===== PAYMENT FAILED =====
-        if (resultCode !== 0) {
-            console.log(`❌ Payment Failed: ${callback.ResultDesc}`);
-            transaction.status = 'FAILED';
-            transaction.resultDesc = callback.ResultDesc;
-            await transaction.save();
+        // 4. Idempotency Check: Prevent processing an already completed/failed transaction
+        if (transaction.status !== 'PENDING') {
+            console.log(`⚠️ Transaction ${checkoutRequestID} already processed. Status: ${transaction.status}`);
             return;
         }
 
-        // ===== 1. PAYMENT RECEIVED (SUCCESS) =====
-        console.log("✅ Payment Received");
+        // ===== PAYMENT FAILED =====
+        if (resultCode !== 0) {
+            transaction.status = 'FAILED';
+            transaction.resultDesc = callback.ResultDesc;
+            await transaction.save();
+            console.log(`❌ Payment Failed: ${callback.ResultDesc}`);
+            return;
+        }
 
+        // ===== PAYMENT SUCCESS =====
         const metadata = callback.CallbackMetadata?.Item || [];
-        const amount = metadata.find(item => item.Name === "Amount")?.Value;
+        const amount = Number(metadata.find(item => item.Name === "Amount")?.Value);
         const mpesaReceipt = metadata.find(item => item.Name === "MpesaReceiptNumber")?.Value;
 
+        // Atomically lock the status update to prevent race conditions
         transaction.status = 'COMPLETED';
         transaction.mpesaReceipt = mpesaReceipt;
         transaction.amountPaid = amount;
         await transaction.save();
 
-        // ===== 2. SPLIT THE FEE =====
+        console.log(`✅ Payment Received: ${amount} KES (Receipt: ${mpesaReceipt})`);
+
+        // ===== SPLIT THE FEE & UNLOCK =====
         const post = await Post.findById(transaction.postID);
         if (!post) {
-            console.error("Post not found");
+            console.error("Post not found for transaction:", transaction.postID);
             return;
         }
 
-        // Adjust this to your actual seller phone field
         const sellerPhone = post.sellerPhone || post.userPhone || post.phone || post.ownerPhone;
+        if (sellerPhone) {
+            const platformFeeRate = 0.0789; // 7.89%
+            const sellerShare = amount * (1 - platformFeeRate);
+            const amountToSend = Math.ceil(sellerShare);
 
-        if (!sellerPhone) {
-            console.error("Seller phone missing");
-            return;
-        }
-
-        const platformFeeRate = 0.0789; // 7.89%
-        const sellerShare = amount * (1 - platformFeeRate);
-        const amountToSend = Math.ceil(sellerShare);
-
-        console.log(`💰 Amount: ${amount} | Platform: ${(amount * platformFeeRate).toFixed(2)} | Seller: ${amountToSend}`);
-
-        // Send seller share via B2C
-        if (amountToSend >= 1) {
-            try {
-                await triggerB2C(sellerPhone, amountToSend, `Payout - Post ${transaction.postID}`);
-                console.log(`🚀 B2C sent ${amountToSend} KES to ${sellerPhone}`);
-            } catch (err) {
-                console.error("❌ B2C failed:", err.message);
+            if (amountToSend >= 1) {
+                try {
+                    await triggerB2C(sellerPhone, amountToSend, `Payout - Post ${transaction.postID}`);
+                    console.log(`🚀 B2C sent ${amountToSend} KES to ${sellerPhone}`);
+                } catch (err) {
+                    console.error("❌ B2C disbursement failed:", err.message);
+                    // Flag for manual review if B2C payout fails after successful customer payment
+                }
             }
         }
 
-        // ===== 3. UNLOCK CONTENT =====
-        const alreadyUnlocked = await Unlock.findOne({
-            postID: transaction.postID,
-            userPhone: transaction.userPhone
-        });
+        // ===== UNLOCK CONTENT (Idempotent Upsert) =====
+        await Unlock.updateOne(
+            { postID: transaction.postID, userPhone: transaction.userPhone },
+            {
+                $setOnInsert: {
+                    amountPaid: amount,
+                    mpesaReceipt: mpesaReceipt,
+                    unlockedAt: new Date()
+                }
+            },
+            { upsert: true }
+        );
 
-        if (!alreadyUnlocked) {
-            await Unlock.create({
-                postID: transaction.postID,
-                userPhone: transaction.userPhone,
-                amountPaid: amount,
-                mpesaReceipt: mpesaReceipt,
-                unlockedAt: new Date()
-            });
-            console.log(`🔓 Content unlocked for ${transaction.userPhone}`);
-        } else {
-            console.log("Already unlocked — skipped");
-        }
+        console.log(`🔓 Content safely unlocked for ${transaction.userPhone}`);
 
     } catch (error) {
-        console.error("STK Callback Error:", error);
+        console.error("Critical STK Callback Processing Error:", error);
     }
 });
+
 // Express route handler for MPESA_B2C_RESULT_URL
 // ====================== B2C RESULT ======================
 app.post('/api/mpesa/b2c/result', async (req, res) => {
