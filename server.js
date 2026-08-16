@@ -34,7 +34,7 @@ const launchProtocol = async () => {
 };
 
 const AFRO_HARD_CAP = 51000000000; 
-const PROTOCOL_FEE = 0.0789;      
+const PROTOCOL_FEE = 0.08;      
 const MINTING_REWARD_RATE = 0.10; 
 const PLATFORM_RESERVE_SHARE = 0.20; 
 
@@ -395,11 +395,82 @@ mongoose.connect(process.env.MONGO_URI)
     .catch(err => console.error('❌ Grid Connection Error:', err));
 
 // --- SCHEMAS ---
+const walletLedgerSchema = new mongoose.Schema({
+    userId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        required: true,
+        index: true
+    },
+
+    type: {
+        type: String,
+        enum: [
+            "CONTENT_SALE",
+            "PLATFORM_FEE",
+            "WITHDRAWAL_RESERVE",
+            "WITHDRAWAL_COMPLETED",
+            "WITHDRAWAL_REFUND",
+            "AFRO_CONVERSION"
+        ],
+        required: true
+    },
+
+    direction: {
+        type: String,
+        enum: ["CREDIT", "DEBIT"],
+        required: true
+    },
+
+    amount: {
+        type: Number,
+        required: true,
+        min: 0
+    },
+
+    currency: {
+        type: String,
+        default: "KES"
+    },
+
+    balanceBefore: {
+        type: Number,
+        required: true
+    },
+
+    balanceAfter: {
+        type: Number,
+        required: true
+    },
+
+    reference: {
+        type: String,
+        required: true,
+        unique: true,
+        index: true
+    },
+
+    metadata: {
+        type: mongoose.Schema.Types.Mixed,
+        default: {}
+    },
+
+    createdAt: {
+        type: Date,
+        default: Date.now
+    }
+});
+
+const WalletLedger = mongoose.model(
+    "WalletLedger",
+    walletLedgerSchema
+);
 const payoutSchema = new mongoose.Schema({
     userId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
-        required: true
+        required: true,
+        index: true
     },
 
     phone: {
@@ -432,11 +503,6 @@ const payoutSchema = new mongoose.Schema({
         default: 0
     },
 
-    gateway: {
-        type: String,
-        default: "mpesa_b2c"
-    },
-
     status: {
         type: String,
         enum: [
@@ -445,22 +511,44 @@ const payoutSchema = new mongoose.Schema({
             "failed",
             "timeout"
         ],
-        default: "pending"
+        default: "pending",
+        index: true
     },
 
-    conversationId: String,
+    gateway: {
+        type: String,
+        default: "mpesa_b2c"
+    },
+
+    conversationId: {
+        type: String,
+        unique: true,
+        sparse: true,
+        index: true
+    },
 
     originatorConversationId: String,
 
-    mpesaTxId: String,
+    mpesaTxId: {
+        type: String,
+        unique: true,
+        sparse: true,
+        index: true
+    },
+
+    resultCode: Number,
+
+    resultDesc: String,
 
     responseCode: String,
 
     responseDescription: String,
 
-    resultCode: Number,
+    ledgerReserveReference: String,
 
-    resultDesc: String,
+    ledgerCompletionReference: String,
+
+    ledgerRefundReference: String,
 
     createdAt: {
         type: Date,
@@ -599,22 +687,93 @@ P2POrderSchema.index({ status: 1, createdAt: -1 });
 const P2POrder = mongoose.model('P2POrder', P2POrderSchema);
 
 const transactionSchema = new mongoose.Schema({
-    checkoutID: { type: String, unique: true },
-    postID: String,
+    checkoutID: {
+        type: String,
+        index: true,
+        sparse: true
+    },
+
+    transactionID: {
+        type: String,
+        unique: true,
+        sparse: true,
+        index: true
+    },
+
+    postID: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Post",
+        required: true,
+        index: true
+    },
+
     userPhone: String,
-    amountPaid: Number, 
-    currency: { type: String, default: 'KES' }, 
-    gateway: { type: String, default: 'mpesa' }, 
-    type: { 
-        type: String, 
-        enum: ['unlock', 'license', 'share_download', 'handshake_fee', 'p2p_buy'], // ← Added p2p_buy
-        default: 'unlock' 
-    }, 
-    handshakeID: String,
-    status: { type: String, default: 'pending' }, 
-    timestamp: { type: Number, default: Date.now }
+
+    creatorId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        required: true,
+        index: true
+    },
+
+    amountPaid: {
+        type: Number,
+        required: true
+    },
+
+    platformFee: {
+        type: Number,
+        default: 0
+    },
+
+    creatorAmount: {
+        type: Number,
+        default: 0
+    },
+
+    currency: {
+        type: String,
+        default: "KES"
+    },
+
+    type: String,
+
+    gateway: {
+        type: String,
+        default: "mpesa"
+    },
+
+    status: {
+        type: String,
+        enum: [
+            "pending",
+            "completed",
+            "failed"
+        ],
+        default: "pending",
+        index: true
+    },
+
+    receiptNumber: String,
+
+    resultCode: Number,
+
+    resultDesc: String,
+
+    createdAt: {
+        type: Date,
+        default: Date.now
+    },
+
+    completedAt: Date,
+
+    failedAt: Date
 });
-const Transaction = mongoose.model('Transaction', transactionSchema);
+
+const Transaction = mongoose.model(
+    "Transaction",
+    transactionSchema
+);
 const handshakeSchema = new mongoose.Schema({
     postId: { type: mongoose.Schema.Types.ObjectId, ref: 'Post' }, 
     sender: String,
@@ -1857,6 +2016,7 @@ function getPreferredGateway(countryCode, phone) {
   //    Change to 'flutterwave' if you prefer Flutterwave for non-EA
   return 'stripe';
 }
+
 const triggerUniversalPush = async (phone, amountInKES, postId, type, handshakeId = null) => {
     const formattedPhone = cleanPhone(phone);
     if (!formattedPhone) throw new Error("IDENT_SIGNAL_LOST");
@@ -2156,8 +2316,8 @@ const triggerStripePayment = async (
         };
 
         // If a recipient account ID is supplied, split funds automatically:
-        // - 7.89% platform fee retained -> Payouts to your Bank of America account
-        // - 92.11% balance -> Transferred to recipient user's connected account
+        // - 8.00% platform fee retained -> Payouts to your Bank of America account
+        // - 92% balance -> Transferred to recipient user's connected account
         if (recipientStripeAccountId) {
             const platformFeeInMinor = Math.round(amountInMinor * platformFeePercent);
             
@@ -2840,7 +3000,545 @@ app.post('/api/posts/:id/unlock', async (req, res) => {
         });
     }
 });
+async function creditCreatorSale({
+    creatorId,
+    grossAmount,
+    postId,
+    transactionId
+}) {
+    const session = await mongoose.startSession();
 
+    try {
+        await session.withTransaction(async () => {
+
+            const gross = Number(grossAmount);
+
+            if (!Number.isFinite(gross) || gross <= 0) {
+                throw new Error("INVALID_SALE_AMOUNT");
+            }
+
+            const platformFee =
+                Number((gross * 0.08).toFixed(2));
+
+            const creatorAmount =
+                Number((gross - platformFee).toFixed(2));
+
+            const creator =
+                await User.findById(
+                    creatorId
+                ).session(session);
+
+            if (!creator) {
+                throw new Error("CREATOR_NOT_FOUND");
+            }
+
+            const reference =
+                `SALE-${transactionId}`;
+
+            // -----------------------------------------------------
+            // Idempotency protection
+            // -----------------------------------------------------
+
+            const existing =
+                await WalletLedger.findOne({
+                    reference
+                }).session(session);
+
+            if (existing) {
+                console.log(
+                    `⚠️ Sale already processed: ${reference}`
+                );
+
+                return;
+            }
+
+            const before =
+                Number(creator.earnings || 0);
+
+            const after =
+                Number(
+                    (before + creatorAmount).toFixed(2)
+                );
+
+            // -----------------------------------------------------
+            // Credit creator
+            // -----------------------------------------------------
+
+            creator.earnings = after;
+
+            await creator.save({
+                session
+            });
+
+            // -----------------------------------------------------
+            // Creator ledger
+            // -----------------------------------------------------
+
+            await WalletLedger.create(
+                [{
+                    userId: creator._id,
+
+                    type: "CONTENT_SALE",
+
+                    direction: "CREDIT",
+
+                    amount: creatorAmount,
+
+                    currency: "KES",
+
+                    balanceBefore: before,
+
+                    balanceAfter: after,
+
+                    reference,
+
+                    metadata: {
+                        postId,
+                        transactionId,
+                        grossAmount: gross,
+                        platformFee,
+                        creatorShare: 0.92
+                    }
+                }],
+                { session }
+            );
+
+            console.log(
+                `💰 CREATOR CREDIT: KES ${creatorAmount} | Creator ${creator._id}`
+            );
+        });
+
+    } finally {
+        await session.endSession();
+    }
+}
+function calculateCreatorSplit(amount) {
+    const gross = Number(amount);
+
+    if (
+        !Number.isFinite(gross) ||
+        gross <= 0
+    ) {
+        throw new Error("INVALID_PAYMENT_AMOUNT");
+    }
+
+    const platformFee =
+        Number((gross * 0.08).toFixed(2));
+
+    const creatorAmount =
+        Number((gross - platformFee).toFixed(2));
+
+    return {
+        gross,
+        platformFee,
+        creatorAmount
+    };
+}
+const creatorIdentity = cleanPhone(post.owner);
+
+const creator = await User.findOne({
+    identity: creatorIdentity
+}).session(session);
+
+if (!creator) {
+    throw new Error("CREATOR_NOT_FOUND");
+}
+async function settleSuccessfulContentPurchase({
+    transactionId,
+    postId,
+    payerPhone,
+    amount,
+    receiptNumber = null
+}) {
+    const session = await mongoose.startSession();
+
+    try {
+        let settlementResult = null;
+
+        await session.withTransaction(async () => {
+
+            // =====================================================
+            // 1. FIND TRANSACTION
+            // =====================================================
+
+            const transaction = await Transaction.findOne({
+                transactionID: transactionId
+            }).session(session);
+
+            if (!transaction) {
+                throw new Error("TRANSACTION_NOT_FOUND");
+            }
+
+            // =====================================================
+            // 2. IDEMPOTENCY
+            // =====================================================
+
+            if (transaction.status === "completed") {
+                settlementResult = {
+                    alreadyProcessed: true,
+                    creatorAmount: transaction.creatorAmount
+                };
+
+                return;
+            }
+
+            // =====================================================
+            // 3. FIND POST
+            // =====================================================
+
+            const post = await Post.findById(
+                postId
+            ).session(session);
+
+            if (!post) {
+                throw new Error("POST_NOT_FOUND");
+            }
+
+            // =====================================================
+            // 4. FIND CREATOR USING post.owner
+            // =====================================================
+
+            if (!post.owner) {
+                throw new Error("POST_OWNER_MISSING");
+            }
+
+            const creatorIdentity =
+                cleanPhone(post.owner);
+
+            const creator = await User.findOne({
+                identity: creatorIdentity
+            }).session(session);
+
+            if (!creator) {
+                throw new Error("CREATOR_NOT_FOUND");
+            }
+
+            // =====================================================
+            // 5. CALCULATE 8% / 92%
+            // =====================================================
+
+            const split =
+                calculateCreatorSplit(amount);
+
+            // =====================================================
+            // 6. VERIFY PAYMENT AMOUNT
+            // =====================================================
+
+            const transactionAmount =
+                Number(transaction.amountPaid);
+
+            if (
+                Math.abs(
+                    transactionAmount -
+                    split.gross
+                ) > 0.01
+            ) {
+                throw new Error(
+                    "PAYMENT_AMOUNT_MISMATCH"
+                );
+            }
+
+            // =====================================================
+            // 7. CREDIT CREATOR
+            // =====================================================
+
+            const balanceBefore =
+                Number(creator.earnings || 0);
+
+            const balanceAfter =
+                Number(
+                    (
+                        balanceBefore +
+                        split.creatorAmount
+                    ).toFixed(2)
+                );
+
+            creator.earnings = balanceAfter;
+
+            await creator.save({
+                session
+            });
+
+            // =====================================================
+            // 8. CREATE IMMUTABLE CREATOR LEDGER
+            // =====================================================
+
+            const creatorReference =
+                `SALE-${transactionId}`;
+
+            await WalletLedger.create(
+                [{
+                    userId: creator._id,
+
+                    type: "CONTENT_SALE",
+
+                    direction: "CREDIT",
+
+                    amount: split.creatorAmount,
+
+                    currency: "KES",
+
+                    balanceBefore,
+
+                    balanceAfter,
+
+                    reference: creatorReference,
+
+                    metadata: {
+                        transactionId,
+
+                        postId:
+                            post._id.toString(),
+
+                        payerPhone,
+
+                        grossAmount:
+                            split.gross,
+
+                        platformFee:
+                            split.platformFee,
+
+                        creatorAmount:
+                            split.creatorAmount,
+
+                        platformShare: 0.08,
+
+                        creatorShare: 0.92,
+
+                        receiptNumber
+                    }
+                }],
+                {
+                    session
+                }
+            );
+
+            // =====================================================
+            // 9. MARK PAYMENT COMPLETED
+            // =====================================================
+
+            transaction.status =
+                "completed";
+
+            transaction.platformFee =
+                split.platformFee;
+
+            transaction.creatorAmount =
+                split.creatorAmount;
+
+            transaction.creatorId =
+                creator._id;
+
+            transaction.receiptNumber =
+                receiptNumber;
+
+            transaction.completedAt =
+                new Date();
+
+            transaction.resultCode = 0;
+
+            transaction.resultDesc =
+                "Payment completed";
+
+            await transaction.save({
+                session
+            });
+
+            settlementResult = {
+                alreadyProcessed: false,
+
+                creatorId:
+                    creator._id,
+
+                creatorAmount:
+                    split.creatorAmount,
+
+                platformFee:
+                    split.platformFee,
+
+                gross:
+                    split.gross
+            };
+        });
+
+        return settlementResult;
+
+    } finally {
+        await session.endSession();
+    }
+}
+app.post('/api/mpesa/c2b/confirmation', async (req, res) => {
+
+    // Acknowledge Safaricom immediately
+    res.status(200).json({
+        ResultCode: 0,
+        ResultDesc: "Accepted"
+    });
+
+    try {
+
+        console.log(
+            "📥 C2B CONFIRMATION:",
+            JSON.stringify(
+                req.body,
+                null,
+                2
+            )
+        );
+
+        const body = req.body || {};
+
+        // =====================================================
+        // DARaja C2B FIELDS
+        // =====================================================
+
+        const transactionType =
+            body.TransactionType;
+
+        const transactionId =
+            body.TransID;
+
+        const transactionTime =
+            body.TransTime;
+
+        const amount =
+            Number(body.TransAmount);
+
+        const businessShortCode =
+            body.BusinessShortCode;
+
+        const billRefNumber =
+            body.BillRefNumber;
+
+        const invoiceNumber =
+            body.InvoiceNumber;
+
+        const thirdPartyTransId =
+            body.ThirdPartyTransID;
+
+        const phone =
+            cleanPhone(
+                body.MSISDN
+            );
+
+        // =====================================================
+        // VALIDATION
+        // =====================================================
+
+        if (
+            !transactionId ||
+            !Number.isFinite(amount) ||
+            amount <= 0
+        ) {
+            console.error(
+                "❌ Invalid C2B confirmation"
+            );
+
+            return;
+        }
+
+        // =====================================================
+        // FIND ORIGINAL TRANSACTION
+        // =====================================================
+
+        const transaction =
+            await Transaction.findOne({
+                transactionID:
+                    transactionId
+            });
+
+        if (!transaction) {
+
+            console.error(
+                "⚠️ C2B transaction not found:",
+                transactionId
+            );
+
+            return;
+        }
+
+        // =====================================================
+        // ALREADY PROCESSED
+        // =====================================================
+
+        if (
+            transaction.status ===
+            "completed"
+        ) {
+
+            console.log(
+                "ℹ️ Duplicate C2B callback ignored:",
+                transactionId
+            );
+
+            return;
+        }
+
+        // =====================================================
+        // VERIFY AMOUNT
+        // =====================================================
+
+        if (
+            Math.abs(
+                Number(
+                    transaction.amountPaid
+                ) - amount
+            ) > 0.01
+        ) {
+
+            console.error(
+                `🚨 PAYMENT AMOUNT MISMATCH | Expected ${transaction.amountPaid} | Received ${amount}`
+            );
+
+            transaction.status =
+                "failed";
+
+            transaction.resultCode =
+                -1;
+
+            transaction.resultDesc =
+                "Payment amount mismatch";
+
+            transaction.failedAt =
+                new Date();
+
+            await transaction.save();
+
+            return;
+        }
+
+        // =====================================================
+        // SETTLE PAYMENT
+        // =====================================================
+
+        const settlement =
+            await settleSuccessfulContentPurchase({
+                transactionId,
+                postId:
+                    transaction.postID,
+                payerPhone: phone,
+                amount,
+                receiptNumber:
+                    transactionId
+            });
+
+        console.log(
+            "💰 C2B SETTLEMENT:",
+            JSON.stringify(
+                settlement,
+                null,
+                2
+            )
+        );
+
+    } catch (err) {
+
+        console.error(
+            "❌ C2B CONFIRMATION ERROR:",
+            err
+        );
+    }
+});
 async function triggerB2C(
     phone,
     amount,
@@ -2912,50 +3610,55 @@ async function triggerB2C(
     }
 }
 app.post('/api/mpesa/withdraw', async (req, res) => {
-    const { identity, amount } = req.body;
 
-    const cleaned = cleanPhone(identity);
-    const withdrawalAmount = Number(amount);
+    const session =
+        await mongoose.startSession();
 
-    let payout = null;
+    let payoutId = null;
 
     try {
-        // =========================================================
-        // 1. VALIDATE REQUEST
-        // =========================================================
+
+        const { phone, amount } = req.body;
+
+        const withdrawalAmount =
+            Number(amount);
+
+        // =====================================================
+        // BASIC VALIDATION
+        // =====================================================
 
         if (
-            !cleaned ||
-            !Number.isFinite(withdrawalAmount)
+            !phone ||
+            !Number.isFinite(withdrawalAmount) ||
+            withdrawalAmount < 10
         ) {
             return res.status(400).json({
                 error: "INVALID_WITHDRAWAL_REQUEST"
             });
         }
 
-        if (withdrawalAmount < 10) {
-            return res.status(400).json({
-                error: "BELOW_MINIMUM"
+        const cleaned =
+            cleanPhone(phone);
+
+        // =====================================================
+        // IMPORTANT:
+        // Replace this with your actual authentication system.
+        //
+        // Example:
+        // const userId = req.user._id;
+        // =====================================================
+
+        const userId = req.user?._id;
+
+        if (!userId) {
+            return res.status(401).json({
+                error: "UNAUTHORIZED"
             });
         }
 
-        // =========================================================
-        // 2. FIND USER
-        // =========================================================
-
-        const user = await User.findOne({
-            identity: cleaned
-        });
-
-        if (!user) {
-            return res.status(400).json({
-                error: "USER_NOT_FOUND"
-            });
-        }
-
-        // =========================================================
-        // 3. CURRENT AFRO VALUE
-        // =========================================================
+        // =====================================================
+        // GET AFRO RATE OUTSIDE TRANSACTION
+        // =====================================================
 
         const marketPrice =
             await calculateCurrentAfroPrice(User);
@@ -2972,280 +3675,460 @@ app.post('/api/mpesa/withdraw', async (req, res) => {
             });
         }
 
-        const earningsBalance =
-            Number(user.earnings || 0);
+        let payout;
 
-        const afroBalance =
-            Number(user.afroCoins || 0);
+        // =====================================================
+        // ATOMIC FINANCIAL TRANSACTION
+        // =====================================================
 
-        const afroValueInKES =
-            afroBalance * kesRate;
+        await session.withTransaction(async () => {
 
-        const totalAvailable =
-            earningsBalance + afroValueInKES;
+            const user =
+                await User.findById(
+                    userId
+                ).session(session);
 
-        // =========================================================
-        // 4. CHECK BALANCE
-        // =========================================================
-
-        if (totalAvailable < withdrawalAmount) {
-            return res.status(400).json({
-                error: "INSUFFICIENT_BALANCE",
-                details: {
-                    requested: withdrawalAmount,
-                    earnings: Number(
-                        earningsBalance.toFixed(2)
-                    ),
-                    afroCoins: Number(
-                        afroBalance.toFixed(4)
-                    ),
-                    afroValueKES: Number(
-                        afroValueInKES.toFixed(2)
-                    ),
-                    totalAvailable: Number(
-                        totalAvailable.toFixed(2)
-                    )
-                }
-            });
-        }
-
-        // =========================================================
-        // 5. DETERMINE WHAT WILL BE RESERVED
-        // =========================================================
-
-        let afroConverted = 0;
-        let earningsReserved = 0;
-
-        if (earningsBalance >= withdrawalAmount) {
-
-            // Pure KES earnings withdrawal
-            earningsReserved = withdrawalAmount;
-
-        } else {
-
-            // Use all available earnings first
-            earningsReserved = earningsBalance;
-
-            const neededFromAfro =
-                withdrawalAmount - earningsBalance;
-
-            afroConverted = Math.min(
-                neededFromAfro / kesRate,
-                afroBalance
-            );
-
-            const convertedKES =
-                afroConverted * kesRate;
-
-            const coveredAmount =
-                earningsReserved + convertedKES;
-
-            if (coveredAmount < withdrawalAmount) {
-                return res.status(400).json({
-                    error: "BALANCE_CONVERSION_FAILED"
-                });
+            if (!user) {
+                throw new Error(
+                    "USER_NOT_FOUND"
+                );
             }
-        }
 
-        // =========================================================
-        // 6. RESERVE FUNDS
-        //
-        // We remove the funds from the spendable balance now.
-        // If B2C later fails, the callback restores them.
-        // =========================================================
+            const earnings =
+                Number(user.earnings || 0);
 
-        const updatedUser =
-            await User.findOneAndUpdate(
-                {
-                    _id: user._id,
+            const afroCoins =
+                Number(user.afroCoins || 0);
 
-                    // Protect against concurrent withdrawals
-                    earnings: {
-                        $gte: earningsReserved
-                    },
+            const afroValue =
+                afroCoins * kesRate;
 
-                    afroCoins: {
-                        $gte: afroConverted
+            const totalAvailable =
+                earnings + afroValue;
+
+            if (
+                totalAvailable <
+                withdrawalAmount
+            ) {
+                throw new Error(
+                    "INSUFFICIENT_BALANCE"
+                );
+            }
+
+            // =================================================
+            // DETERMINE SOURCE
+            // =================================================
+
+            let earningsReserved = 0;
+            let afroConverted = 0;
+
+            if (
+                earnings >=
+                withdrawalAmount
+            ) {
+
+                earningsReserved =
+                    withdrawalAmount;
+
+            } else {
+
+                earningsReserved =
+                    earnings;
+
+                const needed =
+                    withdrawalAmount -
+                    earningsReserved;
+
+                afroConverted =
+                    Math.min(
+                        needed / kesRate,
+                        afroCoins
+                    );
+            }
+
+            // =================================================
+            // FINAL SAFETY CHECK
+            // =================================================
+
+            const resultingKES =
+                earningsReserved +
+                (
+                    afroConverted *
+                    kesRate
+                );
+
+            if (
+                resultingKES <
+                withdrawalAmount
+            ) {
+                throw new Error(
+                    "BALANCE_CONVERSION_FAILED"
+                );
+            }
+
+            // =================================================
+            // RESERVE BALANCE
+            // =================================================
+
+            const before =
+                earnings;
+
+            const after =
+                Number(
+                    (
+                        earnings -
+                        earningsReserved
+                    ).toFixed(2)
+                );
+
+            user.earnings = after;
+
+            user.afroCoins =
+                Number(
+                    (
+                        afroCoins -
+                        afroConverted
+                    ).toFixed(4)
+                );
+
+            await user.save({
+                session
+            });
+
+            // =================================================
+            // CREATE PAYOUT
+            // =================================================
+
+            payout =
+                await Payout.create(
+                    [{
+                        userId: user._id,
+
+                        phone: cleaned,
+
+                        amount:
+                            withdrawalAmount,
+
+                        currency: "KES",
+
+                        earningsReserved,
+
+                        afroConverted,
+
+                        afroRate: kesRate,
+
+                        status: "pending",
+
+                        gateway: "mpesa_b2c"
+                    }],
+                    { session }
+                );
+
+            payout =
+                payout[0];
+
+            payoutId =
+                payout._id;
+
+            // =================================================
+            // RESERVATION LEDGER
+            // =================================================
+
+            const reference =
+                `WD-RESERVE-${payout._id}`;
+
+            await WalletLedger.create(
+                [{
+                    userId: user._id,
+
+                    type:
+                        "WITHDRAWAL_RESERVE",
+
+                    direction:
+                        "DEBIT",
+
+                    amount:
+                        withdrawalAmount,
+
+                    currency:
+                        "KES",
+
+                    balanceBefore:
+                        before,
+
+                    balanceAfter:
+                        after,
+
+                    reference,
+
+                    metadata: {
+                        payoutId:
+                            payout._id.toString(),
+
+                        phone: cleaned,
+
+                        earningsReserved,
+
+                        afroConverted,
+
+                        afroRate: kesRate
                     }
-                },
-                {
-                    $inc: {
-                        earnings: -earningsReserved,
-                        afroCoins: -afroConverted
-                    }
-                },
-                {
-                    new: true
-                }
+                }],
+                { session }
             );
 
-        if (!updatedUser) {
-            return res.status(409).json({
-                error: "BALANCE_CHANGED_RETRY_WITHDRAWAL"
+            payout.ledgerReserveReference =
+                reference;
+
+            await payout.save({
+                session
             });
-        }
-
-        // =========================================================
-        // 7. CREATE PENDING PAYOUT
-        // =========================================================
-
-        payout = await Payout.create({
-            userId: user._id,
-            phone: cleaned,
-
-            amount: withdrawalAmount,
-            currency: "KES",
-
-            earningsReserved,
-            afroConverted,
-            afroRate: kesRate,
-
-            status: "pending",
-
-            gateway: "mpesa_b2c",
-
-            createdAt: new Date()
         });
 
-        // =========================================================
-        // 8. INITIATE M-PESA B2C
-        // =========================================================
+        // =====================================================
+        // TRANSACTION COMMITTED
+        //
+        // NOW CALL SAFARICOM
+        // =====================================================
 
-        const b2cResponse = await triggerB2C(
-            cleaned,
-            withdrawalAmount,
-            `iNFLUENSA WD-${payout._id}`
-        );
+        const b2cResponse =
+            await triggerB2C(
+                cleaned,
+                withdrawalAmount,
+                `iNFLUENSA WD-${payoutId}`
+            );
 
-        console.log(
-            "🚀 B2C RESPONSE:",
-            JSON.stringify(
-                b2cResponse,
-                null,
-                2
-            )
-        );
+        // =====================================================
+        // SAVE SAFARICOM IDs
+        // =====================================================
 
-        // =========================================================
-        // 9. SAVE SAFARICOM IDENTIFIERS
-        // =========================================================
+        payout =
+            await Payout.findById(
+                payoutId
+            );
+
+        if (!payout) {
+            throw new Error(
+                "PAYOUT_RECORD_NOT_FOUND"
+            );
+        }
 
         payout.conversationId =
-            b2cResponse?.ConversationID || null;
+            b2cResponse?.ConversationID;
 
         payout.originatorConversationId =
-            b2cResponse?.OriginatorConversationID || null;
+            b2cResponse
+                ?.OriginatorConversationID;
 
         payout.responseCode =
-            b2cResponse?.ResponseCode || null;
+            b2cResponse?.ResponseCode;
 
         payout.responseDescription =
-            b2cResponse?.ResponseDescription || null;
+            b2cResponse
+                ?.ResponseDescription;
 
         await payout.save();
-
-        // =========================================================
-        // 10. RETURN
-        // =========================================================
 
         return res.json({
             success: true,
 
-            message:
-                "Withdrawal initiated successfully",
+            status: "pending",
 
-            amount: withdrawalAmount,
+            payoutId:
+                payout._id,
+
+            amount:
+                withdrawalAmount,
 
             currency: "KES",
 
-            phone: cleaned,
-
-            afroConverted: Number(
-                afroConverted.toFixed(4)
-            ),
-
-            afroValueKES: Number(
-                (afroConverted * kesRate).toFixed(2)
-            ),
-
-            status: "pending",
-
-            payoutId: payout._id,
-
             conversationId:
-                b2cResponse?.ConversationID,
-
-            data: b2cResponse
+                payout.conversationId
         });
 
     } catch (err) {
 
         console.error(
-            "❌ M-PESA WITHDRAWAL ERROR:",
+            "❌ WITHDRAWAL ERROR:",
             err.response?.data ||
             err.message
         );
 
-        // =========================================================
-        // 11. IF B2C INITIATION FAILED,
-        // RESTORE THE RESERVED FUNDS
-        // =========================================================
+        // =====================================================
+        // IF PAYOUT WAS CREATED BUT SAFARICOM REQUEST FAILED
+        // =====================================================
 
-        if (payout) {
+        if (payoutId) {
 
             try {
 
-                await User.findByIdAndUpdate(
-                    payout.userId,
-                    {
-                        $inc: {
-                            earnings:
-                                payout.earningsReserved || 0,
+                const payout =
+                    await Payout.findById(
+                        payoutId
+                    );
 
-                            afroCoins:
-                                payout.afroConverted || 0
-                        }
+                if (
+                    payout &&
+                    payout.status === "pending" &&
+                    !payout.conversationId
+                ) {
+
+                    const session2 =
+                        await mongoose.startSession();
+
+                    try {
+
+                        await session2.withTransaction(
+                            async () => {
+
+                                const currentPayout =
+                                    await Payout.findById(
+                                        payoutId
+                                    ).session(
+                                        session2
+                                    );
+
+                                if (
+                                    !currentPayout ||
+                                    currentPayout.status !== "pending"
+                                ) {
+                                    return;
+                                }
+
+                                await User.findByIdAndUpdate(
+                                    currentPayout.userId,
+
+                                    {
+                                        $inc: {
+                                            earnings:
+                                                currentPayout
+                                                    .earningsReserved,
+
+                                            afroCoins:
+                                                currentPayout
+                                                    .afroConverted
+                                        }
+                                    },
+
+                                    {
+                                        session:
+                                            session2
+                                    }
+                                );
+
+                                const user =
+                                    await User.findById(
+                                        currentPayout.userId
+                                    ).session(
+                                        session2
+                                    );
+
+                                const before =
+                                    Number(
+                                        user.earnings
+                                    );
+
+                                const after =
+                                    Number(
+                                        (
+                                            before +
+                                            currentPayout
+                                                .earningsReserved
+                                        ).toFixed(2)
+                                    );
+
+                                await WalletLedger.create(
+                                    [{
+                                        userId:
+                                            currentPayout.userId,
+
+                                        type:
+                                            "WITHDRAWAL_REFUND",
+
+                                        direction:
+                                            "CREDIT",
+
+                                        amount:
+                                            currentPayout.amount,
+
+                                        currency:
+                                            "KES",
+
+                                        balanceBefore:
+                                            before,
+
+                                        balanceAfter:
+                                            after,
+
+                                        reference:
+                                            `WD-REFUND-${currentPayout._id}`,
+
+                                        metadata: {
+                                            payoutId:
+                                                currentPayout._id.toString(),
+
+                                            reason:
+                                                "B2C_REQUEST_NOT_ACCEPTED"
+                                        }
+                                    }],
+                                    {
+                                        session:
+                                            session2
+                                    }
+                                );
+
+                                currentPayout.status =
+                                    "failed";
+
+                                currentPayout.resultDesc =
+                                    err.message;
+
+                                currentPayout.failedAt =
+                                    new Date();
+
+                                await currentPayout.save({
+                                    session:
+                                        session2
+                                });
+                            }
+                        );
+
+                    } finally {
+                        await session2.endSession();
                     }
-                );
+                }
 
-                payout.status = "failed";
-                payout.resultCode = -1;
-                payout.resultDesc =
-                    err.response?.data ||
-                    err.message;
-
-                payout.failedAt = new Date();
-
-                await payout.save();
-
-            } catch (restoreError) {
+            } catch (refundError) {
 
                 console.error(
-                    "🚨 CRITICAL: FAILED TO RESTORE WITHDRAWAL FUNDS:",
-                    restoreError
+                    "🚨 CRITICAL REFUND ERROR:",
+                    refundError
                 );
             }
         }
 
         return res.status(500).json({
-            error: "MPESA_B2C_WITHDRAWAL_FAILED"
+            error:
+                "MPESA_B2C_WITHDRAWAL_FAILED"
         });
+
+    } finally {
+
+        await session.endSession();
     }
 });
 app.post('/api/mpesa/b2c/result', async (req, res) => {
+
+    // Acknowledge Safaricom immediately
+    res.status(200).json({
+        ResponseCode: "0",
+        ResponseDesc: "Accepted"
+    });
+
     try {
-        const result = req.body?.Result;
 
-        console.log(
-            "📥 B2C Result:",
-            JSON.stringify(result, null, 2)
-        );
-
-        // Acknowledge Safaricom immediately
-        res.status(200).json({
-            ResponseCode: "0",
-            ResponseDesc: "Accepted"
-        });
+        const result =
+            req.body?.Result;
 
         if (!result) return;
 
@@ -3255,9 +4138,9 @@ app.post('/api/mpesa/b2c/result', async (req, res) => {
         const resultCode =
             Number(result.ResultCode);
 
-        // =========================================================
+        // =====================================================
         // SUCCESS
-        // =========================================================
+        // =====================================================
 
         if (resultCode === 0) {
 
@@ -3265,122 +4148,313 @@ app.post('/api/mpesa/b2c/result', async (req, res) => {
                 result.ResultParameters
                     ?.ResultParameter || [];
 
-            const transactionAmount =
-                params.find(
-                    p => p.Key === "TransactionAmount"
-                )?.Value;
-
-            const recipient =
-                params.find(
-                    p => p.Key === "ReceiverPartyPublicName"
-                )?.Value;
-
-            const mpesaTransactionId =
+            const mpesaTxId =
                 result.TransactionID;
 
-            console.log(
-                `✅ B2C SUCCESS | KES ${transactionAmount} | ${recipient} | TX ${mpesaTransactionId}`
-            );
-
             const payout =
                 await Payout.findOne({
-                    conversationId,
-                    status: "pending"
+                    conversationId
                 });
 
             if (!payout) {
                 console.error(
-                    "⚠️ B2C SUCCESS: Payout not found:",
+                    "⚠️ Payout not found:",
                     conversationId
                 );
                 return;
             }
 
-            payout.status = "completed";
-            payout.mpesaTxId =
-                mpesaTransactionId;
-
-            payout.resultCode =
-                resultCode;
-
-            payout.resultDesc =
-                result.ResultDesc;
-
-            payout.completedAt =
-                new Date();
-
-            await payout.save();
-
-            console.log(
-                `💰 PAYOUT COMPLETED: KES ${payout.amount} → ${payout.phone}`
-            );
-
-        } else {
-
-            // =====================================================
-            // FAILED
-            // =====================================================
-
-            console.error(
-                `❌ B2C FAILED [${resultCode}]: ${result.ResultDesc}`
-            );
-
-            const payout =
-                await Payout.findOne({
-                    conversationId,
-                    status: "pending"
-                });
-
-            if (!payout) {
-                console.error(
-                    "⚠️ B2C FAILURE: Payout not found:",
+            // Idempotency
+            if (
+                payout.status === "completed"
+            ) {
+                console.log(
+                    "ℹ️ Duplicate B2C success ignored:",
                     conversationId
                 );
                 return;
             }
 
-            // =====================================================
-            // RESTORE RESERVED FUNDS
-            // =====================================================
+            if (
+                payout.status !== "pending"
+            ) {
+                return;
+            }
 
-            await User.findByIdAndUpdate(
-                payout.userId,
-                {
-                    $inc: {
-                        earnings:
-                            payout.earningsReserved || 0,
+            const session =
+                await mongoose.startSession();
 
-                        afroCoins:
-                            payout.afroConverted || 0
+            try {
+
+                await session.withTransaction(
+                    async () => {
+
+                        const lockedPayout =
+                            await Payout.findOne({
+                                _id: payout._id,
+                                status: "pending"
+                            }).session(
+                                session
+                            );
+
+                        if (!lockedPayout) {
+                            return;
+                        }
+
+                        lockedPayout.status =
+                            "completed";
+
+                        lockedPayout.mpesaTxId =
+                            mpesaTxId;
+
+                        lockedPayout.resultCode =
+                            resultCode;
+
+                        lockedPayout.resultDesc =
+                            result.ResultDesc;
+
+                        lockedPayout.completedAt =
+                            new Date();
+
+                        lockedPayout
+                            .ledgerCompletionReference =
+                            `WD-COMPLETE-${lockedPayout._id}`;
+
+                        await lockedPayout.save({
+                            session
+                        });
+
+                        // -------------------------------------------------
+                        // Settlement ledger
+                        // -------------------------------------------------
+
+                        const user =
+                            await User.findById(
+                                lockedPayout.userId
+                            ).session(
+                                session
+                            );
+
+                        await WalletLedger.create(
+                            [{
+                                userId:
+                                    lockedPayout.userId,
+
+                                type:
+                                    "WITHDRAWAL_COMPLETED",
+
+                                direction:
+                                    "DEBIT",
+
+                                amount:
+                                    lockedPayout.amount,
+
+                                currency:
+                                    "KES",
+
+                                balanceBefore:
+                                    Number(
+                                        user.earnings || 0
+                                    ),
+
+                                balanceAfter:
+                                    Number(
+                                        user.earnings || 0
+                                    ),
+
+                                reference:
+                                    `WD-COMPLETE-${lockedPayout._id}`,
+
+                                metadata: {
+                                    payoutId:
+                                        lockedPayout._id.toString(),
+
+                                    mpesaTxId
+                                }
+                            }],
+                            {
+                                session
+                            }
+                        );
                     }
+                );
+
+            } finally {
+
+                await session.endSession();
+            }
+
+            console.log(
+                `✅ B2C COMPLETED: ${payout._id}`
+            );
+
+            return;
+        }
+
+        // =====================================================
+        // FAILURE
+        // =====================================================
+
+        const payout =
+            await Payout.findOne({
+                conversationId,
+                status: "pending"
+            });
+
+        if (!payout) {
+            console.error(
+                "⚠️ Failed payout not found:",
+                conversationId
+            );
+            return;
+        }
+
+        const session =
+            await mongoose.startSession();
+
+        try {
+
+            await session.withTransaction(
+                async () => {
+
+                    const lockedPayout =
+                        await Payout.findOne({
+                            _id: payout._id,
+                            status: "pending"
+                        }).session(
+                            session
+                        );
+
+                    if (!lockedPayout) {
+                        return;
+                    }
+
+                    // ---------------------------------------------
+                    // Restore reserved balance
+                    // ---------------------------------------------
+
+                    const user =
+                        await User.findById(
+                            lockedPayout.userId
+                        ).session(
+                            session
+                        );
+
+                    const before =
+                        Number(
+                            user.earnings || 0
+                        );
+
+                    user.earnings =
+                        Number(
+                            (
+                                before +
+                                lockedPayout
+                                    .earningsReserved
+                            ).toFixed(2)
+                        );
+
+                    user.afroCoins =
+                        Number(
+                            (
+                                Number(
+                                    user.afroCoins || 0
+                                ) +
+                                lockedPayout
+                                    .afroConverted
+                            ).toFixed(4)
+                        );
+
+                    await user.save({
+                        session
+                    });
+
+                    // ---------------------------------------------
+                    // Refund ledger
+                    // ---------------------------------------------
+
+                    await WalletLedger.create(
+                        [{
+                            userId:
+                                lockedPayout.userId,
+
+                            type:
+                                "WITHDRAWAL_REFUND",
+
+                            direction:
+                                "CREDIT",
+
+                            amount:
+                                lockedPayout.amount,
+
+                            currency:
+                                "KES",
+
+                            balanceBefore:
+                                before,
+
+                            balanceAfter:
+                                Number(
+                                    user.earnings
+                                ),
+
+                            reference:
+                                `WD-REFUND-${lockedPayout._id}`,
+
+                            metadata: {
+                                payoutId:
+                                    lockedPayout._id.toString(),
+
+                                resultCode,
+
+                                resultDesc:
+                                    result.ResultDesc
+                            }
+                        }],
+                        {
+                            session
+                        }
+                    );
+
+                    lockedPayout.status =
+                        "failed";
+
+                    lockedPayout.resultCode =
+                        resultCode;
+
+                    lockedPayout.resultDesc =
+                        result.ResultDesc;
+
+                    lockedPayout.failedAt =
+                        new Date();
+
+                    lockedPayout
+                        .ledgerRefundReference =
+                        `WD-REFUND-${lockedPayout._id}`;
+
+                    await lockedPayout.save({
+                        session
+                    });
                 }
             );
 
-            payout.status = "failed";
+        } finally {
 
-            payout.resultCode =
-                resultCode;
-
-            payout.resultDesc =
-                result.ResultDesc;
-
-            payout.failedAt =
-                new Date();
-
-            await payout.save();
-
-            console.log(
-                `↩️ PAYOUT FAILED — FUNDS RESTORED: ${payout.phone}`
-            );
+            await session.endSession();
         }
+
+        console.log(
+            `↩️ B2C FAILED — FUNDS RESTORED: ${payout._id}`
+        );
 
     } catch (err) {
 
         console.error(
-            "❌ B2C Result Processing Error:",
+            "❌ B2C RESULT PROCESSING ERROR:",
             err
         );
-
+    }
+});
         // Safaricom already received the acknowledgement.
         // Do not attempt a second response.
     }
