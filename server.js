@@ -4447,10 +4447,7 @@ app.post('/api/mpesa/b2c/result', async (req, res) => {
         );
     }
 });
-        // Safaricom already received the acknowledgement.
-        // Do not attempt a second response.
-    }
-});
+       
 app.post('/api/mpesa/b2c/timeout', async (req, res) => {
     try {
         console.error(
