@@ -3134,15 +3134,7 @@ function calculateCreatorSplit(amount) {
         creatorAmount
     };
 }
-const creatorIdentity = cleanPhone(post.owner);
 
-const creator = await User.findOne({
-    identity: creatorIdentity
-}).session(session);
-
-if (!creator) {
-    throw new Error("CREATOR_NOT_FOUND");
-}
 async function settleSuccessfulContentPurchase({
     transactionId,
     postId,
