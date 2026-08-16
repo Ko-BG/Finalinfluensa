@@ -1937,7 +1937,7 @@ const triggerStkPush = async (
          */
 
         const tillNumber =
-            (process.env.MPESA_TILL_NUMBER || shortCode).trim();
+            (process.env.MPESA_TILL_NUMBER || "").trim();
 
 
         if (!shortCode) {
@@ -2004,7 +2004,7 @@ const triggerStkPush = async (
 
             PartyA: customerPhone,
 
-            PartyB: "3422513",
+            PartyB: tillNumber,
 
             PhoneNumber: customerPhone,
 
