@@ -2143,7 +2143,7 @@ const triggerStkPush = async (phone, amount, postId, type, handshakeId = null) =
         await Transaction.create({
             checkoutID: response.data.CheckoutRequestID,
             postID: postId, 
-            creatorId: creatorIdentity,
+            creatorId: creatorPhone,
             userPhone: phone, 
             amountPaid: amount, 
             type, 
