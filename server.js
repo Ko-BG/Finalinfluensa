@@ -396,16 +396,88 @@ mongoose.connect(process.env.MONGO_URI)
 
 // --- SCHEMAS ---
 const payoutSchema = new mongoose.Schema({
-    parentTxID: { type: String, index: true }, 
-    recipientNode: String,                     
-    grossAmount: Number,                       
-    creatorNet: Number,                        
-    platformFee: Number,                       
-    mpesaB2CReceipt: String,                   
-    status: { type: String, default: 'pending', enum: ['pending', 'completed', 'failed', 'queued'] }, 
-    timestamp: { type: Number, default: Date.now }
+    userId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        required: true
+    },
+
+    phone: {
+        type: String,
+        required: true
+    },
+
+    amount: {
+        type: Number,
+        required: true
+    },
+
+    currency: {
+        type: String,
+        default: "KES"
+    },
+
+    earningsReserved: {
+        type: Number,
+        default: 0
+    },
+
+    afroConverted: {
+        type: Number,
+        default: 0
+    },
+
+    afroRate: {
+        type: Number,
+        default: 0
+    },
+
+    gateway: {
+        type: String,
+        default: "mpesa_b2c"
+    },
+
+    status: {
+        type: String,
+        enum: [
+            "pending",
+            "completed",
+            "failed",
+            "timeout"
+        ],
+        default: "pending"
+    },
+
+    conversationId: String,
+
+    originatorConversationId: String,
+
+    mpesaTxId: String,
+
+    responseCode: String,
+
+    responseDescription: String,
+
+    resultCode: Number,
+
+    resultDesc: String,
+
+    createdAt: {
+        type: Date,
+        default: Date.now
+    },
+
+    completedAt: Date,
+
+    failedAt: Date,
+
+    timeoutAt: Date
 });
-const Payout = mongoose.model('Payout', payoutSchema);
+
+const Payout = mongoose.model(
+    "Payout",
+    payoutSchema
+);
 
 const postSchema = new mongoose.Schema({
     title: String, 
@@ -1927,37 +1999,7 @@ const triggerStkPush = async (phone, amount, postId, type, handshakeId = null) =
         throw new Error(errorDetail?.errorMessage || "STK_PUSH_DISRUPTED");
     }
 };
-async function triggerB2C(phone, amount, remark = "iNFLUENSA Payout") {
-    const cleaned = cleanPhone(phone);
-    
-    const payload = {
-        InitiatorName: process.env.MPESA_INITIATOR_NAME,
-        SecurityCredential: process.env.MPESA_SECURITY_CREDENTIAL,
-        CommandID: "BusinessPayment",
-        Amount: Math.ceil(amount),
-        PartyA: process.env.MPESA_SHORTCODE,          // Your Paybill / Till
-        PartyB: cleaned,                              // Seller's phone
-        Remarks: remark,
-        QueueTimeOutURL: `${process.env.BASE_URL}/api/mpesa/b2c/timeout`,
-        ResultURL: `${process.env.BASE_URL}/api/mpesa/b2c/result`,
-        Occasion: "UnlockPayout"
-    };
 
-    try {
-        const auth = await getMpesaToken(); // your existing token function
-        const response = await axios.post(
-            "https://api.safaricom.co.ke/mpesa/b2c/v1/paymentrequest",
-            payload,
-            { headers: { Authorization: `Bearer ${auth}` } }
-        );
-
-        console.log("🚀 B2C initiated:", response.data);
-        return response.data;
-    } catch (err) {
-        console.error("B2C Trigger Error:", err.response?.data || err.message);
-        throw err;
-    }
-}
 const triggerFlutterwavePush = async (phone, amountInKES, postId, type, handshakeId = null) => {
     try {
         // ✅ Live currency + rate
@@ -2798,39 +2840,624 @@ app.post('/api/posts/:id/unlock', async (req, res) => {
         });
     }
 });
+
+async function triggerB2C(
+    phone,
+    amount,
+    remark = "iNFLUENSA Payout"
+) {
+    const cleaned = cleanPhone(phone);
+
+    const payload = {
+        InitiatorName: (process.env.MPESA_INITIATOR_NAME || "").trim(),
+        SecurityCredential: (process.env.MPESA_SECURITY_CREDENTIAL || "").trim(),
+        CommandID: "BusinessPayment",
+        Amount: Math.ceil(Number(amount)),
+        PartyA: (process.env.MPESA_SHORTCODE || "").trim(),
+        PartyB: cleaned,
+        Remarks: remark,
+        QueueTimeOutURL: `${process.env.BASE_URL}/api/mpesa/b2c/timeout`,
+        ResultURL: `${process.env.BASE_URL}/api/mpesa/b2c/result`,
+        Occasion: "iNFLUENSA_Payout"
+    };
+
+    if (
+        !payload.InitiatorName ||
+        !payload.SecurityCredential ||
+        !payload.PartyA ||
+        !process.env.BASE_URL
+    ) {
+        throw new Error("MISSING_MPESA_B2C_CONFIG");
+    }
+
+    try {
+        const token = await getMpesaToken();
+
+        const response = await axios.post(
+            `${getMpesaBaseUrl()}/mpesa/b2c/v1/paymentrequest`,
+            payload,
+            {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json"
+                },
+                timeout: 15000
+            }
+        );
+
+        console.log(
+            "🚀 B2C initiated:",
+            JSON.stringify(response.data, null, 2)
+        );
+
+        if (
+            response.data?.ResponseCode !== undefined &&
+            String(response.data.ResponseCode) !== "0"
+        ) {
+            throw new Error(
+                response.data?.ResponseDescription ||
+                "MPESA_B2C_REQUEST_REJECTED"
+            );
+        }
+
+        return response.data;
+
+    } catch (err) {
+        console.error(
+            "❌ B2C Trigger Error:",
+            err.response?.data || err.message
+        );
+
+        throw err;
+    }
+}
+app.post('/api/mpesa/withdraw', async (req, res) => {
+    const { identity, amount } = req.body;
+
+    const cleaned = cleanPhone(identity);
+    const withdrawalAmount = Number(amount);
+
+    let payout = null;
+
+    try {
+        // =========================================================
+        // 1. VALIDATE REQUEST
+        // =========================================================
+
+        if (
+            !cleaned ||
+            !Number.isFinite(withdrawalAmount)
+        ) {
+            return res.status(400).json({
+                error: "INVALID_WITHDRAWAL_REQUEST"
+            });
+        }
+
+        if (withdrawalAmount < 10) {
+            return res.status(400).json({
+                error: "BELOW_MINIMUM"
+            });
+        }
+
+        // =========================================================
+        // 2. FIND USER
+        // =========================================================
+
+        const user = await User.findOne({
+            identity: cleaned
+        });
+
+        if (!user) {
+            return res.status(400).json({
+                error: "USER_NOT_FOUND"
+            });
+        }
+
+        // =========================================================
+        // 3. CURRENT AFRO VALUE
+        // =========================================================
+
+        const marketPrice =
+            await calculateCurrentAfroPrice(User);
+
+        const kesRate =
+            Number(marketPrice.kesRate);
+
+        if (
+            !Number.isFinite(kesRate) ||
+            kesRate <= 0
+        ) {
+            return res.status(500).json({
+                error: "INVALID_AFRO_MARKET_RATE"
+            });
+        }
+
+        const earningsBalance =
+            Number(user.earnings || 0);
+
+        const afroBalance =
+            Number(user.afroCoins || 0);
+
+        const afroValueInKES =
+            afroBalance * kesRate;
+
+        const totalAvailable =
+            earningsBalance + afroValueInKES;
+
+        // =========================================================
+        // 4. CHECK BALANCE
+        // =========================================================
+
+        if (totalAvailable < withdrawalAmount) {
+            return res.status(400).json({
+                error: "INSUFFICIENT_BALANCE",
+                details: {
+                    requested: withdrawalAmount,
+                    earnings: Number(
+                        earningsBalance.toFixed(2)
+                    ),
+                    afroCoins: Number(
+                        afroBalance.toFixed(4)
+                    ),
+                    afroValueKES: Number(
+                        afroValueInKES.toFixed(2)
+                    ),
+                    totalAvailable: Number(
+                        totalAvailable.toFixed(2)
+                    )
+                }
+            });
+        }
+
+        // =========================================================
+        // 5. DETERMINE WHAT WILL BE RESERVED
+        // =========================================================
+
+        let afroConverted = 0;
+        let earningsReserved = 0;
+
+        if (earningsBalance >= withdrawalAmount) {
+
+            // Pure KES earnings withdrawal
+            earningsReserved = withdrawalAmount;
+
+        } else {
+
+            // Use all available earnings first
+            earningsReserved = earningsBalance;
+
+            const neededFromAfro =
+                withdrawalAmount - earningsBalance;
+
+            afroConverted = Math.min(
+                neededFromAfro / kesRate,
+                afroBalance
+            );
+
+            const convertedKES =
+                afroConverted * kesRate;
+
+            const coveredAmount =
+                earningsReserved + convertedKES;
+
+            if (coveredAmount < withdrawalAmount) {
+                return res.status(400).json({
+                    error: "BALANCE_CONVERSION_FAILED"
+                });
+            }
+        }
+
+        // =========================================================
+        // 6. RESERVE FUNDS
+        //
+        // We remove the funds from the spendable balance now.
+        // If B2C later fails, the callback restores them.
+        // =========================================================
+
+        const updatedUser =
+            await User.findOneAndUpdate(
+                {
+                    _id: user._id,
+
+                    // Protect against concurrent withdrawals
+                    earnings: {
+                        $gte: earningsReserved
+                    },
+
+                    afroCoins: {
+                        $gte: afroConverted
+                    }
+                },
+                {
+                    $inc: {
+                        earnings: -earningsReserved,
+                        afroCoins: -afroConverted
+                    }
+                },
+                {
+                    new: true
+                }
+            );
+
+        if (!updatedUser) {
+            return res.status(409).json({
+                error: "BALANCE_CHANGED_RETRY_WITHDRAWAL"
+            });
+        }
+
+        // =========================================================
+        // 7. CREATE PENDING PAYOUT
+        // =========================================================
+
+        payout = await Payout.create({
+            userId: user._id,
+            phone: cleaned,
+
+            amount: withdrawalAmount,
+            currency: "KES",
+
+            earningsReserved,
+            afroConverted,
+            afroRate: kesRate,
+
+            status: "pending",
+
+            gateway: "mpesa_b2c",
+
+            createdAt: new Date()
+        });
+
+        // =========================================================
+        // 8. INITIATE M-PESA B2C
+        // =========================================================
+
+        const b2cResponse = await triggerB2C(
+            cleaned,
+            withdrawalAmount,
+            `iNFLUENSA WD-${payout._id}`
+        );
+
+        console.log(
+            "🚀 B2C RESPONSE:",
+            JSON.stringify(
+                b2cResponse,
+                null,
+                2
+            )
+        );
+
+        // =========================================================
+        // 9. SAVE SAFARICOM IDENTIFIERS
+        // =========================================================
+
+        payout.conversationId =
+            b2cResponse?.ConversationID || null;
+
+        payout.originatorConversationId =
+            b2cResponse?.OriginatorConversationID || null;
+
+        payout.responseCode =
+            b2cResponse?.ResponseCode || null;
+
+        payout.responseDescription =
+            b2cResponse?.ResponseDescription || null;
+
+        await payout.save();
+
+        // =========================================================
+        // 10. RETURN
+        // =========================================================
+
+        return res.json({
+            success: true,
+
+            message:
+                "Withdrawal initiated successfully",
+
+            amount: withdrawalAmount,
+
+            currency: "KES",
+
+            phone: cleaned,
+
+            afroConverted: Number(
+                afroConverted.toFixed(4)
+            ),
+
+            afroValueKES: Number(
+                (afroConverted * kesRate).toFixed(2)
+            ),
+
+            status: "pending",
+
+            payoutId: payout._id,
+
+            conversationId:
+                b2cResponse?.ConversationID,
+
+            data: b2cResponse
+        });
+
+    } catch (err) {
+
+        console.error(
+            "❌ M-PESA WITHDRAWAL ERROR:",
+            err.response?.data ||
+            err.message
+        );
+
+        // =========================================================
+        // 11. IF B2C INITIATION FAILED,
+        // RESTORE THE RESERVED FUNDS
+        // =========================================================
+
+        if (payout) {
+
+            try {
+
+                await User.findByIdAndUpdate(
+                    payout.userId,
+                    {
+                        $inc: {
+                            earnings:
+                                payout.earningsReserved || 0,
+
+                            afroCoins:
+                                payout.afroConverted || 0
+                        }
+                    }
+                );
+
+                payout.status = "failed";
+                payout.resultCode = -1;
+                payout.resultDesc =
+                    err.response?.data ||
+                    err.message;
+
+                payout.failedAt = new Date();
+
+                await payout.save();
+
+            } catch (restoreError) {
+
+                console.error(
+                    "🚨 CRITICAL: FAILED TO RESTORE WITHDRAWAL FUNDS:",
+                    restoreError
+                );
+            }
+        }
+
+        return res.status(500).json({
+            error: "MPESA_B2C_WITHDRAWAL_FAILED"
+        });
+    }
+});
 app.post('/api/mpesa/b2c/result', async (req, res) => {
     try {
         const result = req.body?.Result;
-        console.log("📥 B2C Result:", JSON.stringify(result, null, 2));
 
-        res.status(200).json({ ResponseCode: "0", ResponseDesc: "Accepted" });
+        console.log(
+            "📥 B2C Result:",
+            JSON.stringify(result, null, 2)
+        );
+
+        // Acknowledge Safaricom immediately
+        res.status(200).json({
+            ResponseCode: "0",
+            ResponseDesc: "Accepted"
+        });
 
         if (!result) return;
 
-        if (result.ResultCode === 0) {
-            const params = result.ResultParameters?.ResultParameter || [];
-            const amount = params.find(p => p.Key === "TransactionAmount")?.Value;
-            const recipient = params.find(p => p.Key === "ReceiverPartyPublicName")?.Value;
-            const txId = result.TransactionID;
+        const conversationId =
+            result.ConversationID;
 
-            console.log(`✅ B2C SUCCESS: KES ${amount} paid to ${recipient} | Tx: ${txId}`);
+        const resultCode =
+            Number(result.ResultCode);
 
-            // Optional: mark a Payout record as completed
-            // await Payout.findOneAndUpdate({ conversationId: result.ConversationID }, { status: 'completed', mpesaTxId: txId });
+        // =========================================================
+        // SUCCESS
+        // =========================================================
+
+        if (resultCode === 0) {
+
+            const params =
+                result.ResultParameters
+                    ?.ResultParameter || [];
+
+            const transactionAmount =
+                params.find(
+                    p => p.Key === "TransactionAmount"
+                )?.Value;
+
+            const recipient =
+                params.find(
+                    p => p.Key === "ReceiverPartyPublicName"
+                )?.Value;
+
+            const mpesaTransactionId =
+                result.TransactionID;
+
+            console.log(
+                `✅ B2C SUCCESS | KES ${transactionAmount} | ${recipient} | TX ${mpesaTransactionId}`
+            );
+
+            const payout =
+                await Payout.findOne({
+                    conversationId,
+                    status: "pending"
+                });
+
+            if (!payout) {
+                console.error(
+                    "⚠️ B2C SUCCESS: Payout not found:",
+                    conversationId
+                );
+                return;
+            }
+
+            payout.status = "completed";
+            payout.mpesaTxId =
+                mpesaTransactionId;
+
+            payout.resultCode =
+                resultCode;
+
+            payout.resultDesc =
+                result.ResultDesc;
+
+            payout.completedAt =
+                new Date();
+
+            await payout.save();
+
+            console.log(
+                `💰 PAYOUT COMPLETED: KES ${payout.amount} → ${payout.phone}`
+            );
+
         } else {
-            console.error(`❌ B2C FAILED [${result.ResultCode}]: ${result.ResultDesc}`);
-            // Optional: alert admin or reverse the earnings credit
+
+            // =====================================================
+            // FAILED
+            // =====================================================
+
+            console.error(
+                `❌ B2C FAILED [${resultCode}]: ${result.ResultDesc}`
+            );
+
+            const payout =
+                await Payout.findOne({
+                    conversationId,
+                    status: "pending"
+                });
+
+            if (!payout) {
+                console.error(
+                    "⚠️ B2C FAILURE: Payout not found:",
+                    conversationId
+                );
+                return;
+            }
+
+            // =====================================================
+            // RESTORE RESERVED FUNDS
+            // =====================================================
+
+            await User.findByIdAndUpdate(
+                payout.userId,
+                {
+                    $inc: {
+                        earnings:
+                            payout.earningsReserved || 0,
+
+                        afroCoins:
+                            payout.afroConverted || 0
+                    }
+                }
+            );
+
+            payout.status = "failed";
+
+            payout.resultCode =
+                resultCode;
+
+            payout.resultDesc =
+                result.ResultDesc;
+
+            payout.failedAt =
+                new Date();
+
+            await payout.save();
+
+            console.log(
+                `↩️ PAYOUT FAILED — FUNDS RESTORED: ${payout.phone}`
+            );
         }
+
     } catch (err) {
-        console.error("B2C Result Error:", err);
-        res.status(200).json({ ResponseCode: "0", ResponseDesc: "Handled" });
+
+        console.error(
+            "❌ B2C Result Processing Error:",
+            err
+        );
+
+        // Safaricom already received the acknowledgement.
+        // Do not attempt a second response.
     }
 });
-app.post('/api/mpesa/b2c/timeout', (req, res) => {
-    console.error("⏱️ B2C Timeout:", JSON.stringify(req.body, null, 2));
-    res.status(200).json({ ResponseCode: "0", ResponseDesc: "Accepted" });
-});
+app.post('/api/mpesa/b2c/timeout', async (req, res) => {
+    try {
+        console.error(
+            "⏱️ B2C TIMEOUT:",
+            JSON.stringify(req.body, null, 2)
+        );
 
+        res.status(200).json({
+            ResponseCode: "0",
+            ResponseDesc: "Accepted"
+        });
+
+        const result =
+            req.body?.Result;
+
+        if (!result) return;
+
+        const conversationId =
+            result.ConversationID;
+
+        const payout =
+            await Payout.findOne({
+                conversationId,
+                status: "pending"
+            });
+
+        if (!payout) {
+            console.error(
+                "⚠️ Timeout payout not found:",
+                conversationId
+            );
+            return;
+        }
+
+        /*
+         * Do NOT immediately restore the money merely because
+         * Safaricom sent a timeout notification.
+         *
+         * The transaction may still resolve.
+         *
+         * Keep it in timeout/pending-review state.
+         */
+
+        payout.status = "timeout";
+
+        payout.resultCode =
+            result.ResultCode;
+
+        payout.resultDesc =
+            result.ResultDesc;
+
+        payout.timeoutAt =
+            new Date();
+
+        await payout.save();
+
+        console.log(
+            `⏱️ PAYOUT TIMEOUT: ${payout._id}`
+        );
+
+    } catch (err) {
+
+        console.error(
+            "❌ B2C Timeout Error:",
+            err.message
+        );
+
+        res.status(200).json({
+            ResponseCode: "0",
+            ResponseDesc: "Handled"
+        });
+    }
+});
 // Express route: /api/payouts/create-onboarding-link
 app.post('/api/payouts/create-onboarding-link', async (req, res) => {
     const { phone } = req.body;
@@ -2948,207 +3575,204 @@ async function handlePaymentCanceled(paymentIntent) {
 }
 
 
-app.post('/api/posts/:id/unlock', async (req, res) => {
-    const { phone, type = 'unlock', country } = req.body;   // ← added country
-    const postId = req.params.id;
-
-    console.log(`🔓 [UNLOCK] Post: ${postId} | Phone: ${phone} | Type: ${type} | Country: ${country}`);
-
-    try {
-        const post = await Post.findById(postId);
-        if (!post) {
-            return res.status(404).json({ error: "Post not found" });
-        }
-
-        let rawPriceKES = (type === 'share_download' || type === 'license') 
-            ? post.price * 10.0 
-            : post.price;
-
-        console.log(`💰 [UNLOCK] Price: ${rawPriceKES} KES`);
-
-        // ========== SMART ROUTING ==========
-        const EAST_AFRICA = ['KE', 'TZ', 'UG', 'RW', 'BI', 'SS', 'ET'];
-        const countryCode = (country || '').toUpperCase();
-
-        let gateway = 'stripe'; // default for Georgia, US, Europe, etc.
-
-        if (EAST_AFRICA.includes(countryCode)) {
-            gateway = 'mpesa';
-        } else if (phone && (phone.startsWith('254') || phone.startsWith('255') || 
-                             phone.startsWith('256') || phone.startsWith('250'))) {
-            // fallback if country was not sent
-            gateway = 'mpesa';
-        }
-
-        console.log(`🌍 Selected gateway: ${gateway}`);
-
-        let result;
-
-        if (gateway === 'mpesa') {
-            result = await triggerStkPush(
-                phone, 
-                Math.max(1, Math.ceil(rawPriceKES)), 
-                post._id, 
-                type
-            );
-        } else {
-            // Stripe (you can change this to triggerFlutterwavePush if you prefer)
-            result = await triggerStripePayment(
-                phone, 
-                Math.max(1, Math.ceil(rawPriceKES)), 
-                post._id, 
-                type
-            );
-        }
-
-        if (!result || (!result.checkoutID && !result.CheckoutRequestID)) {
-            console.error("❌ No checkoutID returned from gateway");
-            return res.status(500).json({ 
-                error: "Universal Sync Failed", 
-                details: "Gateway did not return checkoutID" 
-            });
-        }
-
-        const checkoutID = result.checkoutID || result.CheckoutRequestID;
-
-        console.log(`✅ [UNLOCK] Success - Gateway: ${gateway} | CheckoutID: ${checkoutID}`);
-
-        res.json({ 
-            success: true, 
-            checkoutID,
-            clientSecret: result.clientSecret || null,   // only present for Stripe
-            gateway,
-            ...result 
-        });
-
-    } catch (err) { 
-        console.error("❌ [UNLOCK] CRITICAL FAILURE:", err.message);
-        res.status(500).json({ 
-            error: "Universal Sync Failed", 
-            details: err.message 
-        }); 
-    }
-});
-// Express route handler for MPESA_B2C_RESULT_URL
-app.post('/api/mpesa/b2c/result', async (req, res) => {
-    try {
-        const result = req.body?.Result;
-        console.log("📥 B2C Callback Received:", JSON.stringify(result, null, 2));
-
-        if (!result) {
-            return res.status(200).json({ ResponseCode: "0", ResponseDesc: "Invalid Payload" });
-        }
-
-        // ==========================================
-        // PASTE IT RIGHT HERE 👇
-        // ==========================================
-        if (result.ResultCode === 0) {
-            const transactionId = result.TransactionID;
-            
-            // Safely extract parameter values
-            const params = result.ResultParameters?.ResultParameter || [];
-            const recipient = params.find(p => p.Key === "ReceiverPartyPublicName")?.Value;
-            const amount = params.find(p => p.Key === "TransactionAmount")?.Value;
-
-            console.log(`✅ Paid ${amount} KES to ${recipient} (Tx: ${transactionId})`);
-            
-            // TODO: Update database status to 'COMPLETED'
-        } else {
-            console.error(`❌ B2C Failed [Code ${result.ResultCode}]: ${result.ResultDesc}`);
-            // TODO: Update database status to 'FAILED'
-        }
-        // ==========================================
-
-        // Always return 200 OK to acknowledge Safaricom
-        return res.status(200).json({ ResponseCode: "0", ResponseDesc: "Accept Service" });
-    } catch (error) {
-        console.error("B2C Result Callback Processing Error:", error);
-        // Return 200 even on internal error to stop Safaricom from retrying infinitely
-        return res.status(200).json({ ResponseCode: "0", ResponseDesc: "Error processed locally" });
-    }
-});
-// Express route handler for MPESA_B2C_TIMEOUT_URL
-app.post('/api/mpesa/b2c/timeout', (req, res) => {
-    console.error("⏱️ B2C Transaction Timed Out:", JSON.stringify(req.body, null, 2));
-    // TODO: Mark transaction as 'PENDING_TIMEOUT' or trigger a manual review alert
-    return res.status(200).json({ ResponseCode: "0", ResponseDesc: "Accept Service" });
-});
-
-
-app.post('/api/nodes/withdraw', async (req, res) => {
+app.post('/api/mpesa/withdraw', async (req, res) => {
     const { identity, amount } = req.body;
     const cleaned = cleanPhone(identity);
-    
+    const withdrawalAmount = Number(amount);
+
     try {
-        const user = await User.findOne({ identity: cleaned });
-        if (!user) {
-            return res.status(400).json({ error: "USER_NOT_FOUND" });
-        }
-
-        // NEW: Support combined earnings + AFRO balance
-        const marketPrice = await calculateCurrentAfroPrice(User);
-        const afroValueInKES = (user.afroCoins || 0) * marketPrice.kesRate;
-        const totalAvailable = (user.earnings || 0) + afroValueInKES;
-
-        if (totalAvailable < amount) {
-            return res.status(400).json({ 
-                error: "INSUFFICIENT_BALANCE", 
-                details: `Available: KES ${totalAvailable.toFixed(2)} (Earnings: ${user.earnings}, AFRO Value: ${afroValueInKES.toFixed(2)})` 
+        // =========================================================
+        // 1. VALIDATE REQUEST
+        // =========================================================
+        if (!cleaned || !Number.isFinite(withdrawalAmount)) {
+            return res.status(400).json({
+                error: "INVALID_WITHDRAWAL_REQUEST"
             });
         }
 
-        if (amount < 10) return res.status(400).json({ error: "BELOW_MINIMUM" });
-
-        let remaining = amount;
-        let afroConverted = 0;
-
-        // Auto-convert AFRO if earnings are insufficient
-        if (user.earnings < amount && user.afroCoins > 0) {
-            const neededFromAfro = amount - user.earnings;
-            afroConverted = Math.min(neededFromAfro / marketPrice.kesRate, user.afroCoins);
-            
-            user.earnings += afroConverted * marketPrice.kesRate;
-            user.afroCoins = Number((user.afroCoins - afroConverted).toFixed(4));
-            remaining = user.earnings; // Now covered
+        if (withdrawalAmount < 10) {
+            return res.status(400).json({
+                error: "BELOW_MINIMUM"
+            });
         }
 
-        const config = getCurrencyByPhone(cleaned);
-        const payload = {
-            "account_bank": "MPS", 
-            "account_number": cleaned,
-            "amount": amount,
-            "currency": config.code,
-            "narration": "iNFLUENSA_NODE_PAYOUT",
-            "reference": `WD-${Date.now()}-${cleaned.slice(-4)}`
-        };
-
-        const response = await axios.post("https://api.flutterwave.com/v3/transfers", payload, {
-            headers: { Authorization: `Bearer ${(process.env.FLW_SECRET_KEY || "").trim()}` },
-            timeout: 15000 
+        // =========================================================
+        // 2. FIND USER
+        // =========================================================
+        const user = await User.findOne({
+            identity: cleaned
         });
 
-        if (response.data.status === "success") {
-            // Deduct from earnings (AFRO already converted above)
-            await User.findOneAndUpdate(
-                { identity: cleaned }, 
-                { 
-                    $inc: { earnings: -amount },
-                    $set: { afroCoins: user.afroCoins } 
+        if (!user) {
+            return res.status(400).json({
+                error: "USER_NOT_FOUND"
+            });
+        }
+
+        // =========================================================
+        // 3. GET CURRENT AFRO → KES VALUE
+        // =========================================================
+        const marketPrice = await calculateCurrentAfroPrice(User);
+
+        const kesRate = Number(marketPrice.kesRate);
+
+        if (!Number.isFinite(kesRate) || kesRate <= 0) {
+            return res.status(500).json({
+                error: "INVALID_AFRO_MARKET_RATE"
+            });
+        }
+
+        const earningsBalance = Number(user.earnings || 0);
+        const afroBalance = Number(user.afroCoins || 0);
+
+        const afroValueInKES = afroBalance * kesRate;
+
+        const totalAvailable =
+            earningsBalance + afroValueInKES;
+
+        // =========================================================
+        // 4. CHECK TOTAL AVAILABLE BALANCE
+        // =========================================================
+        if (totalAvailable < withdrawalAmount) {
+            return res.status(400).json({
+                error: "INSUFFICIENT_BALANCE",
+                details: {
+                    requested: withdrawalAmount,
+                    earnings: Number(earningsBalance.toFixed(2)),
+                    afroCoins: Number(afroBalance.toFixed(4)),
+                    afroValueKES: Number(afroValueInKES.toFixed(2)),
+                    totalAvailable: Number(totalAvailable.toFixed(2))
                 }
+            });
+        }
+
+        // =========================================================
+        // 5. CONVERT AFRO IF EARNINGS ARE NOT ENOUGH
+        // =========================================================
+        let afroConverted = 0;
+        let finalEarnings = earningsBalance;
+        let finalAfroBalance = afroBalance;
+
+        if (
+            earningsBalance < withdrawalAmount &&
+            afroBalance > 0
+        ) {
+            const neededFromAfro =
+                withdrawalAmount - earningsBalance;
+
+            afroConverted = Math.min(
+                neededFromAfro / kesRate,
+                afroBalance
             );
 
-            res.json({ 
-                success: true, 
-                message: "Withdrawal successful",
-                afroConverted: afroConverted.toFixed(4),
-                data: response.data.data 
-            });
-        } else {
-            res.status(500).json({ error: "GATEWAY_TRANSFER_FAILED" });
+            finalEarnings =
+                earningsBalance +
+                (afroConverted * kesRate);
+
+            finalAfroBalance =
+                Number(
+                    (afroBalance - afroConverted).toFixed(4)
+                );
         }
-    } catch (err) { 
-        console.error("Withdrawal error:", err);
-        res.status(500).json({ error: "Neural Withdrawal Error" }); 
+
+        // =========================================================
+        // 6. VERIFY CONVERSION COVERED WITHDRAWAL
+        // =========================================================
+        if (finalEarnings < withdrawalAmount) {
+            return res.status(400).json({
+                error: "BALANCE_CONVERSION_FAILED"
+            });
+        }
+
+        // =========================================================
+        // 7. INITIATE M-PESA B2C
+        // =========================================================
+        const b2cResponse = await triggerB2C(
+            cleaned,
+            withdrawalAmount,
+            "iNFLUENSA Payout"
+        );
+
+        console.log(
+            "🚀 iNFLUENSA B2C Withdrawal Initiated:",
+            JSON.stringify(b2cResponse, null, 2)
+        );
+
+        // =========================================================
+        // 8. CHECK SAFARICOM RESPONSE
+        // =========================================================
+        if (
+            !b2cResponse ||
+            (
+                b2cResponse.ResponseCode &&
+                String(b2cResponse.ResponseCode) !== "0"
+            )
+        ) {
+            return res.status(500).json({
+                error: "MPESA_B2C_REQUEST_FAILED",
+                data: b2cResponse
+            });
+        }
+
+        // =========================================================
+        // 9. SAVE BALANCE STATE
+        //
+        // IMPORTANT:
+        // We only update the converted AFRO balance here.
+        //
+        // Earnings should be finalized by the B2C ResultURL
+        // after Safaricom confirms the actual payout result.
+        // =========================================================
+        if (afroConverted > 0) {
+            await User.findOneAndUpdate(
+                { identity: cleaned },
+                {
+                    $set: {
+                        afroCoins: finalAfroBalance
+                    }
+                }
+            );
+        }
+
+        // =========================================================
+        // 10. RETURN SUCCESS
+        // =========================================================
+        return res.json({
+            success: true,
+            message: "Withdrawal initiated successfully",
+
+            phone: cleaned,
+
+            amount: withdrawalAmount,
+
+            currency: "KES",
+
+            afroConverted: Number(
+                afroConverted.toFixed(4)
+            ),
+
+            afroValueKES: Number(
+                (afroConverted * kesRate).toFixed(2)
+            ),
+
+            gateway: "mpesa_b2c",
+
+            data: b2cResponse
+        });
+
+    } catch (err) {
+
+        console.error(
+            "❌ M-PESA WITHDRAWAL ERROR:",
+            err.response?.data || err.message
+        );
+
+        return res.status(500).json({
+            error: "MPESA_B2C_WITHDRAWAL_FAILED",
+            details:
+                err.response?.data ||
+                err.message
+        });
     }
 });
 // === STRIPE CONNECT ONBOARDING (Add this) ===
