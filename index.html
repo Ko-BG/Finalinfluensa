@@ -2450,38 +2450,51 @@ async function generateStoreRedemption() {
     }
 }
 async function finalizeWithdrawal() {
-    const method = document.getElementById('payoutMethod').value;
     const btn = document.getElementById('withdrawSubmitBtn');
-    let payload = { identity: currentUser.identity, type: method };
+    const phoneInput = document.getElementById('payoutPhone').value.trim();
+    const amountInput = parseFloat(document.getElementById('withdrawAmount').value);
 
-    if (method === 'mobile_money') {
-        payload.phone = document.getElementById('payoutPhone').value;
-    } else {
-        payload.account_number = document.getElementById('accountNumber').value;
-        payload.bank_code = document.getElementById('bankCode').value;
+    // Basic client-side validations
+    if (!phoneInput) {
+        showToast("Please enter a valid M-PESA phone number.");
+        return;
     }
 
-    btn.innerText = "HACKING PAYOUT RAILS...";
+    if (!amountInput || amountInput < 10) { // Standard M-PESA B2C min limit
+        showToast("Minimum withdrawal amount is KES 10.");
+        return;
+    }
+
+    const payload = {
+        identity: currentUser.identity,
+        phone: phoneInput,       // Expected formats: 0712345678, 254712345678, etc.
+        amount: amountInput,
+        currency: "KES"
+    };
+
+    btn.innerText = "Processing M-PESA Transfer...";
     btn.disabled = true;
 
     try {
-        const res = await fetch(`${API_URL}/withdraw/flutterwave`, {
+        const res = await fetch(`${API_URL}/withdraw/mpesa`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
+        
         const data = await res.json();
+
         if (res.ok) {
-            showToast("Payout Initialized: Funds on route.");
+            showToast("Withdrawal Sent: Check your phone for M-PESA notification.");
             document.getElementById('withdrawalModal').classList.add('hidden');
             updateWalletUI();
         } else {
-            showToast(data.error || "Vault Locked: Minimum KES 500 required.");
+            showToast(data.error || "M-PESA Payout Failed. Please try again.");
         }
     } catch (e) {
-        showToast("Neural Bridge Error. Try again.");
+        showToast("Network Error: Could not reach payout server.");
     } finally {
-        btn.innerText = "Initiate Payout";
+        btn.innerText = "Request M-PESA Payout";
         btn.disabled = false;
     }
 }
