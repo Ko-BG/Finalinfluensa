@@ -1786,6 +1786,83 @@ function getPreferredGateway(countryCode, phone) {
   //    Change to 'flutterwave' if you prefer Flutterwave for non-EA
   return 'stripe';
 }
+const triggerUniversalPush = async (phone, amountInKES, postId, type, handshakeId = null) => {
+    const formattedPhone = cleanPhone(phone);
+    if (!formattedPhone) throw new Error("IDENT_SIGNAL_LOST");
+
+    try {
+        // === GEO-SMART PAYMENT ROUTING ===
+        if (formattedPhone.startsWith('1') || formattedPhone.length <= 11) {
+            // United States / Canada / most international numbers
+            console.log(`🇺🇸 GEO: Routing to Stripe for ${formattedPhone}`);
+            return await triggerStripePayment(formattedPhone, amountInKES, postId, type, handshakeId);
+        } 
+        
+        if (formattedPhone.startsWith('254')) {
+            // Kenya → M-Pesa STK (always KES)
+            console.log(`🇰🇪 GEO: Routing to M-Pesa STK Push for ${formattedPhone}`);
+            return await triggerStkPush(formattedPhone, amountInKES, postId, type, handshakeId);
+        } 
+        
+        // East & West Africa mobile money via Flutterwave
+        if (
+            formattedPhone.startsWith('256') ||   // Uganda
+            formattedPhone.startsWith('255') ||   // Tanzania
+            formattedPhone.startsWith('234') ||   // Nigeria
+            formattedPhone.startsWith('233')      // Ghana
+        ) {
+            console.log(`🌍 GEO: Routing to Flutterwave for ${formattedPhone}`);
+            return await triggerFlutterwavePush(formattedPhone, amountInKES, postId, type, handshakeId);
+        } 
+
+        // Fallback for any other region → Stripe
+        console.log(`🌐 GEO: Unknown region - defaulting to Stripe for ${formattedPhone}`);
+        return await triggerStripePayment(formattedPhone, amountInKES, postId, type, handshakeId);
+
+    } catch (err) {
+        console.error(`❌ PAYMENT ROUTING FAILURE for ${formattedPhone}: ${err.message}`);
+        throw err;
+    }
+};
+
+let mpesaTokenCache = {
+    token: null,
+    expiry: 0
+};
+
+const getMpesaBaseUrl = () => "https://api.safaricom.co.ke";
+
+const getMpesaToken = async () => {
+    const now = Date.now();
+    if (mpesaTokenCache.token && now < mpesaTokenCache.expiry) {
+        return mpesaTokenCache.token;
+    }
+
+    try {
+        const baseUrl = getMpesaBaseUrl();
+        console.log(`🌐 Syncing with Gateway: ${baseUrl}`);
+        console.log("🔍 MPESA: Syncing Neural Token...");
+        
+        const consumerKey = (process.env.MPESA_CONSUMER_KEY || "").trim();
+        const consumerSecret = (process.env.MPESA_CONSUMER_SECRET || "").trim();
+        const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
+        
+        const res = await axios.get(`${baseUrl}/oauth/v1/generate?grant_type=client_credentials`, {
+            headers: { Authorization: `Basic ${auth}` },
+            timeout: 10000
+        });
+        
+        mpesaTokenCache.token = res.data.access_token;
+        mpesaTokenCache.expiry = now + (3500 * 1000); 
+        
+        console.log("✅ MPESA: Token Synchronized");
+        return res.data.access_token;
+    } catch (error) {
+        console.error("❌ MPESA TOKEN SYNC ERROR:", error.response?.data || error.message);
+        throw new Error("FAILED_TO_SYNC_WITH_SAFARICOM");
+    }
+};
+
 const triggerStkPush = async (phone, amount, postId, type, handshakeId = null) => {
     try {
         const token = await getMpesaToken();
