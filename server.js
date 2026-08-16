@@ -3030,52 +3030,140 @@ app.post('/api/posts/:id/unlock', async (req, res) => {
         }); 
     }
 });
+// ====================== STK CALLBACK ======================
+app.post('/api/mpesa/callback', async (req, res) => {
+    // Always respond to Safaricom immediately
+    res.status(200).json({ ResultCode: 0, ResultDesc: "Accepted" });
+
+    try {
+        const body = req.body;
+        console.log("📥 STK Callback Received:", JSON.stringify(body, null, 2));
+
+        const callback = body?.Body?.stkCallback;
+        if (!callback) return;
+
+        const checkoutRequestID = callback.CheckoutRequestID;
+        const resultCode = callback.ResultCode;
+
+        const transaction = await Transaction.findOne({ checkoutID: checkoutRequestID });
+        if (!transaction) {
+            console.error("Transaction not found:", checkoutRequestID);
+            return;
+        }
+
+        // ===== PAYMENT FAILED =====
+        if (resultCode !== 0) {
+            console.log(`❌ Payment Failed: ${callback.ResultDesc}`);
+            transaction.status = 'FAILED';
+            transaction.resultDesc = callback.ResultDesc;
+            await transaction.save();
+            return;
+        }
+
+        // ===== 1. PAYMENT RECEIVED (SUCCESS) =====
+        console.log("✅ Payment Received");
+
+        const metadata = callback.CallbackMetadata?.Item || [];
+        const amount = metadata.find(item => item.Name === "Amount")?.Value;
+        const mpesaReceipt = metadata.find(item => item.Name === "MpesaReceiptNumber")?.Value;
+
+        transaction.status = 'COMPLETED';
+        transaction.mpesaReceipt = mpesaReceipt;
+        transaction.amountPaid = amount;
+        await transaction.save();
+
+        // ===== 2. SPLIT THE FEE =====
+        const post = await Post.findById(transaction.postID);
+        if (!post) {
+            console.error("Post not found");
+            return;
+        }
+
+        // Adjust this to your actual seller phone field
+        const sellerPhone = post.sellerPhone || post.userPhone || post.phone || post.ownerPhone;
+
+        if (!sellerPhone) {
+            console.error("Seller phone missing");
+            return;
+        }
+
+        const platformFeeRate = 0.0789; // 7.89%
+        const sellerShare = amount * (1 - platformFeeRate);
+        const amountToSend = Math.ceil(sellerShare);
+
+        console.log(`💰 Amount: ${amount} | Platform: ${(amount * platformFeeRate).toFixed(2)} | Seller: ${amountToSend}`);
+
+        // Send seller share via B2C
+        if (amountToSend >= 1) {
+            try {
+                await triggerB2C(sellerPhone, amountToSend, `Payout - Post ${transaction.postID}`);
+                console.log(`🚀 B2C sent ${amountToSend} KES to ${sellerPhone}`);
+            } catch (err) {
+                console.error("❌ B2C failed:", err.message);
+            }
+        }
+
+        // ===== 3. UNLOCK CONTENT =====
+        const alreadyUnlocked = await Unlock.findOne({
+            postID: transaction.postID,
+            userPhone: transaction.userPhone
+        });
+
+        if (!alreadyUnlocked) {
+            await Unlock.create({
+                postID: transaction.postID,
+                userPhone: transaction.userPhone,
+                amountPaid: amount,
+                mpesaReceipt: mpesaReceipt,
+                unlockedAt: new Date()
+            });
+            console.log(`🔓 Content unlocked for ${transaction.userPhone}`);
+        } else {
+            console.log("Already unlocked — skipped");
+        }
+
+    } catch (error) {
+        console.error("STK Callback Error:", error);
+    }
+});
 // Express route handler for MPESA_B2C_RESULT_URL
+// ====================== B2C RESULT ======================
 app.post('/api/mpesa/b2c/result', async (req, res) => {
     try {
         const result = req.body?.Result;
-        console.log("📥 B2C Callback Received:", JSON.stringify(result, null, 2));
+        console.log("📥 B2C Result:", JSON.stringify(result, null, 2));
 
         if (!result) {
-            return res.status(200).json({ ResponseCode: "0", ResponseDesc: "Invalid Payload" });
+            return res.status(200).json({ ResultCode: 0, ResultDesc: "Accepted" });
         }
 
-        // ==========================================
-        // PASTE IT RIGHT HERE 👇
-        // ==========================================
         if (result.ResultCode === 0) {
-            const transactionId = result.TransactionID;
-            
-            // Safely extract parameter values
             const params = result.ResultParameters?.ResultParameter || [];
-            const recipient = params.find(p => p.Key === "ReceiverPartyPublicName")?.Value;
             const amount = params.find(p => p.Key === "TransactionAmount")?.Value;
+            const recipient = params.find(p => p.Key === "ReceiverPartyPublicName")?.Value;
+            const transactionId = result.TransactionID;
 
-            console.log(`✅ Paid ${amount} KES to ${recipient} (Tx: ${transactionId})`);
-            
-            // TODO: Update database status to 'COMPLETED'
+            console.log(`✅ B2C SUCCESS: Sent ${amount} KES to ${recipient} | TxID: ${transactionId}`);
+
+            // TODO: Update your database that payout was successful
         } else {
-            console.error(`❌ B2C Failed [Code ${result.ResultCode}]: ${result.ResultDesc}`);
-            // TODO: Update database status to 'FAILED'
+            console.error(`❌ B2C FAILED [${result.ResultCode}]: ${result.ResultDesc}`);
+            // TODO: Mark for manual review / retry
         }
-        // ==========================================
 
-        // Always return 200 OK to acknowledge Safaricom
-        return res.status(200).json({ ResponseCode: "0", ResponseDesc: "Accept Service" });
+        return res.status(200).json({ ResultCode: 0, ResultDesc: "Accepted" });
     } catch (error) {
-        console.error("B2C Result Callback Processing Error:", error);
-        // Return 200 even on internal error to stop Safaricom from retrying infinitely
-        return res.status(200).json({ ResponseCode: "0", ResponseDesc: "Error processed locally" });
+        console.error("B2C Result Error:", error);
+        return res.status(200).json({ ResultCode: 0, ResultDesc: "Accepted" });
     }
 });
-// Express route handler for MPESA_B2C_TIMEOUT_URL
+
+// ====================== B2C TIMEOUT ======================
 app.post('/api/mpesa/b2c/timeout', (req, res) => {
-    console.error("⏱️ B2C Transaction Timed Out:", JSON.stringify(req.body, null, 2));
-    // TODO: Mark transaction as 'PENDING_TIMEOUT' or trigger a manual review alert
-    return res.status(200).json({ ResponseCode: "0", ResponseDesc: "Accept Service" });
+    console.error("⏱️ B2C Timeout:", JSON.stringify(req.body, null, 2));
+    // TODO: Mark transaction for manual review
+    return res.status(200).json({ ResultCode: 0, ResultDesc: "Accepted" });
 });
-
-
 app.post('/api/nodes/withdraw', async (req, res) => {
     const { identity, amount } = req.body;
     const cleaned = cleanPhone(identity);
