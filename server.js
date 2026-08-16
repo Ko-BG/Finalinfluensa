@@ -1882,7 +1882,7 @@ const triggerStkPush = async (phone, amount, postId, type, handshakeId = null) =
             "BusinessShortCode": shortCode,
             "Password": password,
             "Timestamp": timestamp,
-            "TransactionType": "CustomerPayBillsOnline",
+            "TransactionType": "CustomerPayBillOnline",
             "Amount": Math.round(amount), 
             "PartyA": phone,
             "PartyB": '4564403',
