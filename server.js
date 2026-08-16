@@ -3037,7 +3037,6 @@ app.post('/api/mpesa/callback', async (req, res) => {
             const post = await Post.findById(transaction.postID).session(session);
             if (!post) {
                 console.error(`❌ [MPESA] Post record ${transaction.postID} missing for completed transaction ${checkoutRequestID}`);
-                // Complete payment step regardless so user money record is preserved
             } else {
                 // Idempotent Upsert into Unlock Collection
                 await Unlock.updateOne(
@@ -3053,22 +3052,33 @@ app.post('/api/mpesa/callback', async (req, res) => {
                     { upsert: true, session }
                 );
 
-                // Also update the unlocked_by array on the post model atomically
+                // Update the unlocked_by array on the post model atomically
                 await Post.updateOne(
                     { _id: transaction.postID },
                     { $addToSet: { unlocked_by: transaction.userPhone } },
                     { session }
                 );
+
+                // ============================================================
+                // CREDIT SELLER WALLET (Platform Ledger Split)
+                // ============================================================
+                const sellerPhone = post.sellerPhone || post.userPhone || post.phone || post.ownerPhone;
+                if (sellerPhone) {
+                    const PLATFORM_FEE_RATE = 0.0789; // 7.89% fee
+                    const sellerShare = amount * (1 - PLATFORM_FEE_RATE);
+
+                    // Credit seller's available KES earnings in MongoDB
+                    await User.updateOne(
+                        { $or: [{ phone: sellerPhone }, { identity: sellerPhone }] },
+                        { $inc: { earnings: sellerShare } },
+                        { session }
+                    );
+
+                    console.log(`💰 [LEDGER] Credited ${sellerShare.toFixed(2)} KES to seller (${sellerPhone})`);
+                }
             }
 
             console.log(`✅ [MPESA] Payment Successful: ${amount} KES | Receipt: ${mpesaReceipt} | Post: ${transaction.postID}`);
-
-            // Pass execution context out for background processing
-            session.postContext = {
-                post,
-                amount,
-                transaction
-            };
         });
 
     } catch (error) {
@@ -3076,83 +3086,113 @@ app.post('/api/mpesa/callback', async (req, res) => {
     } finally {
         await session.endSession();
     }
-
-    // ============================================================
-    // 5. ASYNCHRONOUS B2C DISBURSEMENT (Outside DB Transaction Lock)
-    // ============================================================
-    const postContext = session?.postContext;
-    if (postContext && postContext.post) {
-        const { post, amount, transaction } = postContext;
-        const sellerPhone = post.sellerPhone || post.userPhone || post.phone || post.ownerPhone;
-
-        if (sellerPhone) {
-            const PLATFORM_FEE_RATE = 0.0789; // 7.89%
-            const sellerShare = amount * (1 - PLATFORM_FEE_RATE);
-            const amountToSend = Math.ceil(sellerShare);
-
-            if (amountToSend >= 1) {
-                // Non-blocking asynchronous execution so B2C delay doesn't crash callback worker
-                setImmediate(async () => {
-                    try {
-                        console.log(`⏳ Initiating payout of ${amountToSend} KES to seller: ${sellerPhone}`);
-                        await triggerB2C(sellerPhone, amountToSend, `Payout - Post ${transaction.postID}`);
-                        console.log(`🚀 B2C Payout successfully dispatched to ${sellerPhone}`);
-                    } catch (b2cErr) {
-                        console.error(`❌ [B2C FAILURE] Payout failed for transaction ${transaction._id}:`, b2cErr.message);
-                        // Flag in DB for manual admin payout reconciliation
-                        await Transaction.updateOne(
-                            { _id: transaction._id },
-                            { $set: { b2cStatus: 'FAILED', b2cError: b2cErr.message } }
-                        ).catch(console.error);
-                    }
-                });
-            }
-        }
-    }
 });
+
 
 
 // Express route handler for MPESA_B2C_RESULT_URL
 // ====================== B2C RESULT ======================
+// ====================== B2C RESULT CALLBACK ======================
 app.post('/api/mpesa/b2c/result', async (req, res) => {
+    // 1. Always acknowledge receipt to Safaricom immediately
+    res.status(200).json({ ResultCode: 0, ResultDesc: "Accepted" });
+
     try {
         const result = req.body?.Result;
-        console.log("📥 B2C Result:", JSON.stringify(result, null, 2));
+        console.log("📥 B2C Result Received:", JSON.stringify(result, null, 2));
 
-        if (!result) {
-            return res.status(200).json({ ResultCode: 0, ResultDesc: "Accepted" });
-        }
+        if (!result) return;
 
-        if (result.ResultCode === 0) {
+        const conversationID = result.ConversationID;
+        const resultCode = result.ResultCode;
+        const resultDesc = result.ResultDesc;
+
+        if (resultCode === 0) {
+            // ============================================================
+            // 1. B2C PAYOUT SUCCESSFUL
+            // ============================================================
             const params = result.ResultParameters?.ResultParameter || [];
             const amount = params.find(p => p.Key === "TransactionAmount")?.Value;
             const recipient = params.find(p => p.Key === "ReceiverPartyPublicName")?.Value;
-            const transactionId = result.TransactionID;
+            const mpesaReceipt = result.TransactionID;
 
-            console.log(`✅ B2C SUCCESS: Sent ${amount} KES to ${recipient} | TxID: ${transactionId}`);
+            console.log(`✅ [B2C SUCCESS] Sent KES ${amount} to ${recipient} | Receipt: ${mpesaReceipt}`);
 
-            // TODO: Update your database that payout was successful
+            // Mark transaction log as COMPLETED in DB
+            await Transaction.updateOne(
+                { conversationID: conversationID },
+                { 
+                    $set: { 
+                        status: 'COMPLETED',
+                        mpesaReceipt: mpesaReceipt,
+                        resultDesc: resultDesc || 'Payout Successful'
+                    } 
+                }
+            );
+
         } else {
-            console.error(`❌ B2C FAILED [${result.ResultCode}]: ${result.ResultDesc}`);
-            // TODO: Mark for manual review / retry
-        }
+            // ============================================================
+            // 2. B2C PAYOUT FAILED (Refund Balance to User)
+            // ============================================================
+            console.error(`❌ [B2C FAILED] Code: ${resultCode} | Reason: ${resultDesc}`);
 
-        return res.status(200).json({ ResultCode: 0, ResultDesc: "Accepted" });
+            // Find the pending transaction to get user identity & amount
+            const payoutTx = await Transaction.findOne({ conversationID: conversationID });
+
+            if (payoutTx && payoutTx.status !== 'FAILED') {
+                // Refund the deducted amount back to user's earnings
+                await User.updateOne(
+                    { $or: [{ identity: payoutTx.identity }, { phone: payoutTx.userPhone }] },
+                    { $inc: { earnings: payoutTx.amountPaid } }
+                );
+
+                // Update transaction status to FAILED
+                payoutTx.status = 'FAILED';
+                payoutTx.resultDesc = resultDesc || 'B2C Gateway Rejection';
+                await payoutTx.save();
+
+                console.log(`🔄 [REFUND] KES ${payoutTx.amountPaid} refunded to user (${payoutTx.identity || payoutTx.userPhone})`);
+            }
+        }
     } catch (error) {
-        console.error("B2C Result Error:", error);
-        return res.status(200).json({ ResultCode: 0, ResultDesc: "Accepted" });
+        console.error("❌ [B2C Callback Error]:", error);
     }
 });
 
-// ====================== B2C TIMEOUT ======================
-app.post('/api/mpesa/b2c/timeout', (req, res) => {
-    console.error("⏱️ B2C Timeout:", JSON.stringify(req.body, null, 2));
-    // TODO: Mark transaction for manual review
-    return res.status(200).json({ ResultCode: 0, ResultDesc: "Accepted" });
+// ====================== B2C TIMEOUT CALLBACK ======================
+app.post('/api/mpesa/b2c/timeout', async (req, res) => {
+    // 1. Always acknowledge receipt to Safaricom
+    res.status(200).json({ ResultCode: 0, ResultDesc: "Accepted" });
+
+    try {
+        console.error("⏱️ [B2C TIMEOUT]: Transaction timed out on Safaricom side:", JSON.stringify(req.body, null, 2));
+
+        const conversationID = req.body?.Result?.ConversationID;
+
+        if (conversationID) {
+            const payoutTx = await Transaction.findOne({ conversationID: conversationID });
+
+            if (payoutTx && payoutTx.status === 'PENDING') {
+                // Refund earnings back to user due to timeout
+                await User.updateOne(
+                    { $or: [{ identity: payoutTx.identity }, { phone: payoutTx.userPhone }] },
+                    { $inc: { earnings: payoutTx.amountPaid } }
+                );
+
+                payoutTx.status = 'FAILED';
+                payoutTx.resultDesc = 'Safaricom B2C Timeout - Auto Refunded';
+                await payoutTx.save();
+
+                console.log(`🔄 [TIMEOUT REFUND] KES ${payoutTx.amountPaid} returned to user balance.`);
+            }
+        }
+    } catch (error) {
+        console.error("❌ [B2C Timeout Error]:", error);
+    }
 });
 
 app.post('/withdraw/mpesa', async (req, res) => {
-    // 1. Destructure exactly what your frontend sends
+    // 1. Destructure payload from frontend
     const { identity, phone, amount } = req.body;
 
     // Validate incoming data
@@ -3164,14 +3204,14 @@ app.post('/withdraw/mpesa', async (req, res) => {
         return res.status(400).json({ error: "BELOW_MINIMUM" });
     }
 
-    // Standardize the target M-PESA phone number to 254XXXXXXXXX format
+    // Standardize target M-PESA phone number (254XXXXXXXXX)
     const cleanedPhone = cleanPhone(phone);
     if (!cleanedPhone) {
         return res.status(400).json({ error: "INVALID_PHONE_FORMAT" });
     }
     
     try {
-        // 2. Locate user by their platform identity (currentUser.identity)
+        // 2. Locate user by platform identity
         const user = await User.findOne({ identity: identity });
         if (!user) {
             return res.status(400).json({ error: "USER_NOT_FOUND" });
@@ -3191,7 +3231,7 @@ app.post('/withdraw/mpesa', async (req, res) => {
 
         let afroConverted = 0;
 
-        // Auto-convert AFRO coins if available earnings in KES are lower than withdrawal request
+        // Auto-convert AFRO coins if cash earnings are lower than the requested withdrawal
         if (user.earnings < amount && user.afroCoins > 0) {
             const neededFromAfro = amount - user.earnings;
             afroConverted = Math.min(neededFromAfro / marketPrice.kesRate, user.afroCoins);
@@ -3213,8 +3253,8 @@ app.post('/withdraw/mpesa', async (req, res) => {
             SecurityCredential: process.env.MPESA_SECURITY_CREDENTIAL,
             CommandID: "BusinessPayment",
             Amount: Math.floor(amount),
-            PartyA: process.env.MPESA_B2C_SHORTCODE,
-            PartyB: cleanedPhone, // Payout goes to user's typed M-PESA phone
+            PartyA: process.env.MPESA_B2C_SHORTCODE || process.env.MPESA_SHORTCODE,
+            PartyB: cleanedPhone,
             Remarks: "iNFLUENSA_NODE_PAYOUT",
             QueueTimeOutURL: `${process.env.SERVER_URL}/api/mpesa/b2c/timeout`,
             ResultURL: `${process.env.SERVER_URL}/api/mpesa/b2c/result`,
@@ -3232,9 +3272,10 @@ app.post('/withdraw/mpesa', async (req, res) => {
         );
 
         if (response.data.ResponseCode === "0") {
-            // Deduct net KES earnings from database & save updated AFRO coin balance
+            const conversationID = response.data.ConversationID;
             const netEarningsDeduction = amount - (afroConverted * marketPrice.kesRate);
 
+            // Deduct funds and update AFRO coins in user profile
             await User.findOneAndUpdate(
                 { identity: identity }, 
                 { 
@@ -3243,11 +3284,22 @@ app.post('/withdraw/mpesa', async (req, res) => {
                 }
             );
 
+            // Create Transaction ledger record linked to ConversationID (Enables auto-refunds on B2C failure/timeout)
+            await Transaction.create({
+                conversationID: conversationID,
+                identity: identity,
+                userPhone: cleanedPhone,
+                amountPaid: amount,
+                type: 'WITHDRAWAL',
+                status: 'PENDING',
+                gateway: 'mpesa_b2c'
+            });
+
             return res.json({ 
                 success: true, 
                 message: "M-PESA withdrawal initiated successfully",
                 afroConverted: afroConverted.toFixed(4),
-                conversationID: response.data.ConversationID,
+                conversationID: conversationID,
                 data: response.data 
             });
         } else {
@@ -3258,6 +3310,7 @@ app.post('/withdraw/mpesa', async (req, res) => {
         return res.status(500).json({ error: "Neural Withdrawal Error" }); 
     }
 });
+
 
 // === STRIPE CONNECT ONBOARDING (Add this) ===
 app.post('/api/stripe/onboard', async (req, res) => {
