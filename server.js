@@ -2093,73 +2093,177 @@ const getMpesaToken = async () => {
     }
 };
 
-const triggerStkPush = async (phone, amount, postId, type, handshakeId = null) => {
+const triggerStkPush = async (
+    phone,
+    amount,
+    postId,
+    type,
+    handshakeId = null
+) => {
     try {
         const token = await getMpesaToken();
-        const timestamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14);
-        
-        const shortCode = (process.env.MPESA_SHORTCODE || "").trim();
-        const passKey = (process.env.MPESA_PASSKEY || "").trim();
-        const callbackUrl = (process.env.MPESA_CALLBACK_URL || "").trim();
+
+        const timestamp = new Date()
+            .toISOString()
+            .replace(/[-:T.]/g, '')
+            .slice(0, 14);
+
+        const shortCode =
+            (process.env.MPESA_SHORTCODE || "").trim();
+
+        const passKey =
+            (process.env.MPESA_PASSKEY || "").trim();
+
+        const callbackUrl =
+            (process.env.MPESA_CALLBACK_URL || "").trim();
 
         if (!shortCode || !passKey || !callbackUrl) {
             throw new Error("MISSING_MPESA_CONFIG");
         }
 
-        const password = Buffer.from(`${shortCode}${passKey}${timestamp}`).toString('base64');
-        
+        const password = Buffer
+            .from(
+                `${shortCode}${passKey}${timestamp}`
+            )
+            .toString('base64');
+
         const payload = {
-            "BusinessShortCode": shortCode,
-            "Password": password,
-            "Timestamp": timestamp,
-            "TransactionType": "CustomerBuyGoodsOnline",
-            "Amount": Math.round(amount), 
-            "PartyA": phone,
-            "PartyB": '3422513',
-            "PhoneNumber": phone,
-            "CallBackURL": callbackUrl,
-            "AccountReference": `IP-${postId.toString().slice(-6).toUpperCase()}`,
-            "TransactionDesc": `iNFLUENSA ${type.toUpperCase()}`
+            BusinessShortCode: shortCode,
+            Password: password,
+            Timestamp: timestamp,
+            TransactionType: "CustomerBuyGoodsOnline",
+            Amount: Math.round(amount),
+            PartyA: phone,
+            PartyB: "3422513",
+            PhoneNumber: phone,
+            CallBackURL: callbackUrl,
+            AccountReference:
+                `IP-${postId.toString().slice(-6).toUpperCase()}`,
+            TransactionDesc:
+                `iNFLUENSA ${type.toUpperCase()}`
         };
 
-        console.log(`🛰️ MPESA: DISPATCHING STK TO ${idppMaskPhone(phone)} | AMT: ${amount}`);
-        console.log("📤 Full Payload:", JSON.stringify(payload, null, 2));
+        console.log(
+            `🛰️ MPESA: DISPATCHING STK | AMT: ${amount}`
+        );
 
         const response = await axios.post(
-            `${getMpesaBaseUrl()}/mpesa/stkpush/v1/processrequest`, 
-            payload, 
-            { 
-                headers: { 'Authorization': `Bearer ${token}` },
-                timeout: 15000 
+            `${getMpesaBaseUrl()}/mpesa/stkpush/v1/processrequest`,
+            payload,
+            {
+                headers: {
+                    Authorization:
+                        `Bearer ${token}`
+                },
+                timeout: 15000
             }
         );
 
-        console.log("📥 MPESA Raw Response:", JSON.stringify(response.data, null, 2));
+        console.log(
+            "📥 MPESA Raw Response:",
+            JSON.stringify(
+                response.data,
+                null,
+                2
+            )
+        );
 
         if (!response.data?.CheckoutRequestID) {
-            throw new Error("GATEWAY_EMPTY_RESPONSE");
+            throw new Error(
+                "GATEWAY_EMPTY_RESPONSE"
+            );
         }
 
-        await Transaction.create({
-            checkoutID: response.data.CheckoutRequestID,
-            postID: postId, 
-            creatorId: cleanPhone(post.owner),
-            userPhone: phone, 
-            amountPaid: amount, 
-            type, 
-            gateway: 'mpesa', 
-            currency: 'KES', 
-            handshakeID: handshakeId
+        // =====================================================
+        // FIND THE POST
+        // =====================================================
+
+        const post = await Post.findById(postId);
+
+        if (!post) {
+            throw new Error("POST_NOT_FOUND");
+        }
+
+        if (!post.owner) {
+            throw new Error("POST_OWNER_MISSING");
+        }
+
+        // =====================================================
+        // FIND CREATOR
+        //
+        // post.owner = creator phone number
+        // User.identity = creator phone number
+        // =====================================================
+
+        const creator = await User.findOne({
+            identity: cleanPhone(post.owner)
         });
-        
+
+        if (!creator) {
+            throw new Error(
+                "CREATOR_NOT_FOUND"
+            );
+        }
+
+        // =====================================================
+        // CREATE PENDING TRANSACTION
+        // =====================================================
+
+        await Transaction.create({
+            checkoutID:
+                response.data.CheckoutRequestID,
+
+            postID:
+                postId,
+
+            creatorId:
+                cleanPhone(post.owner),
+
+            userPhone:
+                cleanPhone(phone),
+
+            amountPaid:
+                Math.round(amount),
+
+            type,
+
+            gateway:
+                "mpesa",
+
+            currency:
+                "KES",
+
+            handshakeID:
+                handshakeId,
+
+            status:
+                "pending"
+        });
+
         return response.data;
+
     } catch (error) {
-        const errorDetail = error.response?.data || error.message;
-        console.error("❌ MPESA STK CRITICAL FAILURE:", JSON.stringify(errorDetail, null, 2));
-        throw new Error(errorDetail?.errorMessage || "STK_PUSH_DISRUPTED");
+
+        const errorDetail =
+            error.response?.data ||
+            error.message;
+
+        console.error(
+            "❌ MPESA STK CRITICAL FAILURE:",
+            JSON.stringify(
+                errorDetail,
+                null,
+                2
+            )
+        );
+
+        throw new Error(
+            errorDetail?.errorMessage ||
+            error.message ||
+            "STK_PUSH_DISRUPTED"
+        );
     }
 };
-
 const triggerFlutterwavePush = async (phone, amountInKES, postId, type, handshakeId = null) => {
     try {
         // ✅ Live currency + rate
