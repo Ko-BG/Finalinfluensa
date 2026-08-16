@@ -1885,7 +1885,7 @@ const triggerStkPush = async (phone, amount, postId, type, handshakeId = null) =
             "TransactionType": "CustomerPayBillOnline",
             "Amount": Math.round(amount), 
             "PartyA": phone,
-            "PartyB": '4564403',
+            "PartyB": shortCode,
             "PhoneNumber": phone,
             "CallBackURL": callbackUrl,
             "AccountReference": `IP-${postId.toString().slice(-6).toUpperCase()}`,
@@ -2615,222 +2615,183 @@ app.post('/api/stripe-webhook', express.raw({ type: 'application/json' }), async
 
     res.json({ received: true });
 });
-app.post('/api/posts/:id/unlock', async (req, res) => {
-    const { phone, type = 'unlock', country } = req.body;
-    const postId = req.params.id;
+const { body, param, validationResult } = require('express-validator');
 
-    console.log(
-        `🔓 [UNLOCK] Post: ${postId} | Phone: ${phone} | Type: ${type} | Country: ${country}`
-    );
+// Supported East Africa country codes & phone prefixes
 
-    try {
-        const post = await Post.findById(postId);
+const EA_PHONE_PREFIXES = ['254', '255', '256', '250'];
 
-        if (!post) {
-            return res.status(404).json({
-                error: "Post not found"
+/**
+ * Normalizes phone numbers to standard E.164 format (digits-only string)
+ */
+const normalizePhone = (phone) => {
+    if (!phone) return '';
+    return String(phone).replace(/\D/g, '');
+};
+
+/**
+ * Smart Gateway Resolution Strategy
+ */
+const resolvePaymentGateway = (country, cleanPhone) => {
+    const formattedCountry = (country || '').toUpperCase().trim();
+    
+    if (EAST_AFRICAN_COUNTRIES.has(formattedCountry)) {
+        return 'mpesa';
+    }
+    
+    if (cleanPhone && EA_PHONE_PREFIXES.some(prefix => cleanPhone.startsWith(prefix))) {
+        return 'mpesa';
+    }
+
+    return 'stripe';
+};
+
+/**
+ * Price calculation logic with explicit bounds checking
+ */
+const calculateAmountInKES = (basePrice, transactionType) => {
+    const parsedPrice = Number(basePrice);
+    if (isNaN(parsedPrice) || parsedPrice < 0) {
+        throw new Error('Invalid post pricing configuration');
+    }
+
+    const multiplier = (transactionType === 'share_download' || transactionType === 'license') ? 10.0 : 1.0;
+    const calculated = Math.ceil(parsedPrice * multiplier);
+    
+    // Safaricom / Provider Minimum Amount Floor Safety
+    return Math.max(1, calculated);
+};
+
+// ============================================================
+// POST /api/posts/:id/unlock
+// ============================================================
+app.post(
+    '/api/posts/:id/unlock',
+    [
+        param('id').isMongoId().withMessage('Invalid Post ID format'),
+        body('type').optional().isIn(['unlock', 'share_download', 'license']).withMessage('Unsupported transaction type'),
+        body('country').optional().isString().trim().isLength({ min: 2, max: 2 }).withMessage('Country must be a 2-letter ISO code'),
+        body('phone').custom((value, { req }) => {
+            const country = (req.body.country || '').toUpperCase();
+            const clean = normalizePhone(value);
+            
+            if (EAST_AFRICAN_COUNTRIES.has(country) && (!clean || clean.length < 9)) {
+                throw new Error('Valid phone number is required for regional mobile payments');
+            }
+            return true;
+        })
+    ],
+    async (req, res) => {
+        // 1. Input Validation
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({
+                success: false,
+                error: 'VALIDATION_ERROR',
+                details: errors.array()
             });
         }
 
-        // ============================================================
-        // 0. CHECK EXISTING UNLOCK
-        // ============================================================
-        // If payment was already completed and the user is already
-        // authorized, DO NOT create another payment request.
-        const cleanedPhone = cleanPhone(phone);
+        const postId = req.params.id;
+        const { phone, type = 'unlock', country } = req.body;
+        const cleanedPhone = normalizePhone(phone);
 
-        const isOwner =
-            cleanPhone(post.owner) === cleanedPhone;
+        // 2. ACID Transaction Initialization
+        const session = await mongoose.startSession();
+        session.startTransaction();
 
-        const isUnlocked =
-            (post.unlocked_by || []).includes(cleanedPhone);
+        try {
+            // Fetch post safely within database transaction session
+            const post = await Post.findById(postId).session(session);
 
-        const isLicensed =
-            (post.licensed_to || []).includes(cleanedPhone);
+            if (!post) {
+                await session.abortTransaction();
+                return res.status(404).json({
+                    success: false,
+                    error: 'NOT_FOUND',
+                    message: 'Requested post does not exist.'
+                });
+            }
 
-        if (isOwner || isUnlocked || isLicensed) {
-            console.log(
-                `✅ [UNLOCK] Already authorized | Post: ${postId} | Phone: ${cleanedPhone}`
-            );
+            // 3. Authorization Check
+            const cleanOwnerPhone = normalizePhone(post.owner);
+            const unlockedList = (post.unlocked_by || []).map(normalizePhone);
+            const licensedList = (post.licensed_to || []).map(normalizePhone);
 
-            return res.json({
+            const isOwner = cleanOwnerPhone && cleanOwnerPhone === cleanedPhone;
+            const isUnlocked = unlockedList.includes(cleanedPhone);
+            const isLicensed = licensedList.includes(cleanedPhone);
+
+            if (isOwner || isUnlocked || isLicensed) {
+                await session.commitTransaction();
+                return res.status(200).json({
+                    success: true,
+                    alreadyUnlocked: true,
+                    authorized: true,
+                    checkoutID: null,
+                    clientSecret: null,
+                    gateway: null,
+                    postId: post._id,
+                    message: 'User is already authorized for this resource.'
+                });
+            }
+
+            // 4. Price & Gateway Resolution
+            const amount = calculateAmountInKES(post.price, type);
+            const gateway = resolvePaymentGateway(country, cleanedPhone);
+
+            // Commit DB transaction prior to entering external network I/O
+            await session.commitTransaction();
+
+            // 5. Payment Gateway Dispatch
+            let gatewayResponse;
+
+            if (gateway === 'mpesa') {
+                gatewayResponse = await triggerStkPush(cleanedPhone, amount, post._id, type);
+            } else {
+                gatewayResponse = await triggerStripePayment(cleanedPhone, amount, post._id, type);
+            }
+
+            // 6. Gateway Result Normalization
+            const checkoutID = gatewayResponse?.checkoutID || gatewayResponse?.CheckoutRequestID;
+
+            if (!gatewayResponse || !checkoutID) {
+                return res.status(502).json({
+                    success: false,
+                    error: 'PAYMENT_GATEWAY_ERROR',
+                    message: 'Failed to negotiate session with payment gateway provider.'
+                });
+            }
+
+            // 7. Successful Handshake Response
+            return res.status(200).json({
                 success: true,
-                alreadyUnlocked: true,
-                authorized: true,
-                checkoutID: null,
-                clientSecret: null,
-                gateway: null,
-                postId: post._id,
-                message: "User already has access to this post."
+                alreadyUnlocked: false,
+                authorized: false,
+                gateway,
+                checkoutID,
+                clientSecret: gatewayResponse.clientSecret || null,
+                message: gateway === 'mpesa' ? 'STK push successfully sent to device.' : 'Payment session created successfully.'
             });
-        }
 
-        // ============================================================
-        // 1. CALCULATE PRICE
-        // ============================================================
+        } catch (err) {
+            if (session.inTransaction()) {
+                await session.abortTransaction();
+            }
 
-        let rawPriceKES =
-            (type === 'share_download' || type === 'license')
-                ? post.price * 10.0
-                : post.price;
-
-        console.log(
-            `💰 [UNLOCK] Price: ${rawPriceKES} KES`
-        );
-
-        // ============================================================
-        // 2. SMART GATEWAY ROUTING
-        // ============================================================
-
-        const EAST_AFRICA = [
-            'KE',
-            'TZ',
-            'UG',
-            'RW',
-            'BI',
-            'SS',
-            'ET'
-        ];
-
-        const countryCode =
-            (country || '').toUpperCase();
-
-        let gateway = 'stripe';
-
-        if (EAST_AFRICA.includes(countryCode)) {
-            gateway = 'mpesa';
-        } else if (
-            phone &&
-            (
-                phone.startsWith('254') ||
-                phone.startsWith('255') ||
-                phone.startsWith('256') ||
-                phone.startsWith('250')
-            )
-        ) {
-            // Fallback if country was not sent
-            gateway = 'mpesa';
-        }
-
-        console.log(
-            `🌍 Selected gateway: ${gateway}`
-        );
-
-        // ============================================================
-        // 3. INITIATE PAYMENT
-        // ============================================================
-
-        let result;
-
-        if (gateway === 'mpesa') {
-
-            result = await triggerStkPush(
-                phone,
-                Math.max(1, Math.ceil(rawPriceKES)),
-                post._id,
-                type
-            );
-
-        } else {
-
-            // Stripe
-            // You can change this to triggerFlutterwavePush if preferred
-            result = await triggerStripePayment(
-                phone,
-                Math.max(1, Math.ceil(rawPriceKES)),
-                post._id,
-                type
-            );
-        }
-
-        // ============================================================
-        // 4. VERIFY PAYMENT INITIALIZATION
-        // ============================================================
-
-        if (
-            !result ||
-            (
-                !result.checkoutID &&
-                !result.CheckoutRequestID
-            )
-        ) {
-            console.error(
-                "❌ No checkoutID returned from gateway"
-            );
+            console.error('❌ [UNLOCK] Critical Failure:', err);
 
             return res.status(500).json({
-                error: "Universal Sync Failed",
-                details: "Gateway did not return checkoutID"
+                success: false,
+                error: 'INTERNAL_SERVER_ERROR',
+                message: 'An internal error occurred while initializing payment processing.'
             });
+        } finally {
+            session.endSession();
         }
-
-        const checkoutID =
-            result.checkoutID ||
-            result.CheckoutRequestID;
-
-        console.log(
-            `✅ [UNLOCK] Payment initialized | Gateway: ${gateway} | CheckoutID: ${checkoutID}`
-        );
-
-        // ============================================================
-        // 5. RETURN PAYMENT INFORMATION
-        // ============================================================
-
-        return res.json({
-            success: true,
-            alreadyUnlocked: false,
-            authorized: false,
-            checkoutID,
-            clientSecret: result.clientSecret || null,
-            gateway,
-            ...result
-        });
-
-    } catch (err) {
-
-        console.error(
-            "❌ [UNLOCK] CRITICAL FAILURE:",
-            err.message
-        );
-
-        return res.status(500).json({
-            error: "Universal Sync Failed",
-            details: err.message
-        });
     }
-});
-app.post('/api/mpesa/b2c/result', async (req, res) => {
-    try {
-        const result = req.body?.Result;
-        console.log("📥 B2C Result:", JSON.stringify(result, null, 2));
+);
 
-        res.status(200).json({ ResponseCode: "0", ResponseDesc: "Accepted" });
-
-        if (!result) return;
-
-        if (result.ResultCode === 0) {
-            const params = result.ResultParameters?.ResultParameter || [];
-            const amount = params.find(p => p.Key === "TransactionAmount")?.Value;
-            const recipient = params.find(p => p.Key === "ReceiverPartyPublicName")?.Value;
-            const txId = result.TransactionID;
-
-            console.log(`✅ B2C SUCCESS: KES ${amount} paid to ${recipient} | Tx: ${txId}`);
-
-            // Optional: mark a Payout record as completed
-            // await Payout.findOneAndUpdate({ conversationId: result.ConversationID }, { status: 'completed', mpesaTxId: txId });
-        } else {
-            console.error(`❌ B2C FAILED [${result.ResultCode}]: ${result.ResultDesc}`);
-            // Optional: alert admin or reverse the earnings credit
-        }
-    } catch (err) {
-        console.error("B2C Result Error:", err);
-        res.status(200).json({ ResponseCode: "0", ResponseDesc: "Handled" });
-    }
-});
-app.post('/api/mpesa/b2c/timeout', (req, res) => {
-    console.error("⏱️ B2C Timeout:", JSON.stringify(req.body, null, 2));
-    res.status(200).json({ ResponseCode: "0", ResponseDesc: "Accepted" });
-});
 
 // Express route: /api/payouts/create-onboarding-link
 app.post('/api/payouts/create-onboarding-link', async (req, res) => {
@@ -2952,109 +2913,197 @@ async function handlePaymentCanceled(paymentIntent) {
 
 // ====================== STK CALLBACK ======================
 // Safaricom official production IP ranges
-const SAFARICOM_IPS = [
+
+
+// Whitelisted Safaricom Gateway IP Addresses (Production & Sandbox)
+const SAFARICOM_IPS = new Set([
     '196.201.214.200', '196.201.214.206', '196.201.213.114',
     '196.201.214.207', '196.201.214.208', '196.201.213.44'
-];
+]);
 
+/**
+ * Extracts the real client IP address safely through reverse proxies / Cloudflare
+ */
+const getClientIp = (req) => {
+    const forwarded = req.headers['x-forwarded-for'];
+    if (forwarded) {
+        // Grab the first IP in the comma-separated chain (client original IP)
+        return forwarded.split(',')[0].trim();
+    }
+    return req.socket?.remoteAddress || req.ip || '';
+};
+
+/**
+ * Safely parses named parameters from Safaricom CallbackMetadata array
+ */
+const parseCallbackMetadata = (items = []) => {
+    const metadata = {};
+    for (const item of items) {
+        if (item?.Name) {
+            metadata[item.Name] = item.Value;
+        }
+    }
+    return metadata;
+};
+
+// ============================================================
+// POST /api/mpesa/callback
+// ============================================================
 app.post('/api/mpesa/callback', async (req, res) => {
-    // 1. Always respond to Safaricom immediately to prevent timeouts
+    // 1. ALWAYS respond with HTTP 200 immediately to acknowledge Safaricom Webhook
     res.status(200).json({ ResultCode: 0, ResultDesc: "Accepted" });
 
+    // 2. IP Whitelist Verification Check
+    const clientIp = getClientIp(req);
+    if (process.env.NODE_ENV === 'production' && !SAFARICOM_IPS.has(clientIp)) {
+        console.warn(`⚠️ [SECURITY] Unauthorized M-Pesa Callback blocked from IP: ${clientIp}`);
+        return;
+    }
+
+    // 3. Payload Structure Validation
+    const callback = req.body?.Body?.stkCallback;
+    if (!callback) {
+        console.error("❌ [MPESA] Malformed callback payload received:", JSON.stringify(req.body));
+        return;
+    }
+
+    const { CheckoutRequestID: checkoutRequestID, ResultCode: resultCode, ResultDesc: resultDesc } = callback;
+
+    if (!checkoutRequestID) {
+        console.error("❌ [MPESA] Missing CheckoutRequestID in callback payload.");
+        return;
+    }
+
+    // 4. Start Atomic DB Session for Concurrent Security
+    const session = await mongoose.startSession();
+
     try {
-        // 2. Security: Verify IP Whitelist (Skip if behind a trusted proxy/Cloudflare and check headers instead)
-        const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-        // Uncomment below in strict environments:
-        // if (!SAFARICOM_IPS.some(ip => clientIp.includes(ip))) {
-        //     console.warn(`⚠️ Unauthorized callback attempt from IP: ${clientIp}`);
-        //     return;
-        // }
+        await session.withTransaction(async () => {
+            // Atomic Query with Execution Lock
+            const transaction = await Transaction.findOne({ checkoutID: checkoutRequestID }).session(session);
 
-        const body = req.body;
-        const callback = body?.Body?.stkCallback;
-        if (!callback) return;
+            if (!transaction) {
+                console.error(`❌ [MPESA] Transaction record not found for Checkout ID: ${checkoutRequestID}`);
+                return;
+            }
 
-        const checkoutRequestID = callback.CheckoutRequestID;
-        const resultCode = callback.ResultCode;
+            // Idempotency Protection: Exit if transaction is no longer in PENDING state
+            if (transaction.status !== 'PENDING') {
+                console.warn(`⚠️ [MPESA] Duplicate callback ignored for ${checkoutRequestID}. Current status: ${transaction.status}`);
+                return;
+            }
 
-        // 3. Find transaction safely
-        const transaction = await Transaction.findOne({ checkoutID: checkoutRequestID });
-        if (!transaction) {
-            console.error("Transaction not found:", checkoutRequestID);
-            return;
-        }
+            // ============================================================
+            // HANDLE PAYMENT FAILURE / CANCELLATION
+            // ============================================================
+            if (resultCode !== 0) {
+                transaction.status = 'FAILED';
+                transaction.resultDesc = resultDesc || 'Payment cancelled or failed';
+                await transaction.save({ session });
+                
+                console.log(`❌ [MPESA] Payment Failed for ${checkoutRequestID}: ${transaction.resultDesc}`);
+                return;
+            }
 
-        // 4. Idempotency Check: Prevent processing an already completed/failed transaction
-        if (transaction.status !== 'PENDING') {
-            console.log(`⚠️ Transaction ${checkoutRequestID} already processed. Status: ${transaction.status}`);
-            return;
-        }
+            // ============================================================
+            // HANDLE PAYMENT SUCCESS
+            // ============================================================
+            const metadataItems = callback.CallbackMetadata?.Item || [];
+            const parsedMeta = parseCallbackMetadata(metadataItems);
 
-        // ===== PAYMENT FAILED =====
-        if (resultCode !== 0) {
-            transaction.status = 'FAILED';
-            transaction.resultDesc = callback.ResultDesc;
-            await transaction.save();
-            console.log(`❌ Payment Failed: ${callback.ResultDesc}`);
-            return;
-        }
+            const amount = Number(parsedMeta.Amount);
+            const mpesaReceipt = String(parsedMeta.MpesaReceiptNumber || '').trim();
+            const payerPhone = String(parsedMeta.PhoneNumber || '').trim();
 
-        // ===== PAYMENT SUCCESS =====
-        const metadata = callback.CallbackMetadata?.Item || [];
-        const amount = Number(metadata.find(item => item.Name === "Amount")?.Value);
-        const mpesaReceipt = metadata.find(item => item.Name === "MpesaReceiptNumber")?.Value;
+            if (!amount || isNaN(amount) || !mpesaReceipt) {
+                throw new Error(`Invalid metadata contents: Amount=${amount}, Receipt=${mpesaReceipt}`);
+            }
 
-        // Atomically lock the status update to prevent race conditions
-        transaction.status = 'COMPLETED';
-        transaction.mpesaReceipt = mpesaReceipt;
-        transaction.amountPaid = amount;
-        await transaction.save();
+            // Update Transaction State
+            transaction.status = 'COMPLETED';
+            transaction.mpesaReceipt = mpesaReceipt;
+            transaction.amountPaid = amount;
+            transaction.resultDesc = resultDesc || 'Success';
+            await transaction.save({ session });
 
-        console.log(`✅ Payment Received: ${amount} KES (Receipt: ${mpesaReceipt})`);
+            // Fetch and Verify Content Entity
+            const post = await Post.findById(transaction.postID).session(session);
+            if (!post) {
+                console.error(`❌ [MPESA] Post record ${transaction.postID} missing for completed transaction ${checkoutRequestID}`);
+                // Complete payment step regardless so user money record is preserved
+            } else {
+                // Idempotent Upsert into Unlock Collection
+                await Unlock.updateOne(
+                    { postID: transaction.postID, userPhone: transaction.userPhone },
+                    {
+                        $setOnInsert: {
+                            amountPaid: amount,
+                            mpesaReceipt: mpesaReceipt,
+                            payerPhone: payerPhone || transaction.userPhone,
+                            unlockedAt: new Date()
+                        }
+                    },
+                    { upsert: true, session }
+                );
 
-        // ===== SPLIT THE FEE & UNLOCK =====
-        const post = await Post.findById(transaction.postID);
-        if (!post) {
-            console.error("Post not found for transaction:", transaction.postID);
-            return;
-        }
+                // Also update the unlocked_by array on the post model atomically
+                await Post.updateOne(
+                    { _id: transaction.postID },
+                    { $addToSet: { unlocked_by: transaction.userPhone } },
+                    { session }
+                );
+            }
 
+            console.log(`✅ [MPESA] Payment Successful: ${amount} KES | Receipt: ${mpesaReceipt} | Post: ${transaction.postID}`);
+
+            // Pass execution context out for background processing
+            session.postContext = {
+                post,
+                amount,
+                transaction
+            };
+        });
+
+    } catch (error) {
+        console.error(`❌ [MPESA] Critical Transaction Error [${checkoutRequestID}]:`, error);
+    } finally {
+        await session.endSession();
+    }
+
+    // ============================================================
+    // 5. ASYNCHRONOUS B2C DISBURSEMENT (Outside DB Transaction Lock)
+    // ============================================================
+    const postContext = session?.postContext;
+    if (postContext && postContext.post) {
+        const { post, amount, transaction } = postContext;
         const sellerPhone = post.sellerPhone || post.userPhone || post.phone || post.ownerPhone;
+
         if (sellerPhone) {
-            const platformFeeRate = 0.0789; // 7.89%
-            const sellerShare = amount * (1 - platformFeeRate);
+            const PLATFORM_FEE_RATE = 0.0789; // 7.89%
+            const sellerShare = amount * (1 - PLATFORM_FEE_RATE);
             const amountToSend = Math.ceil(sellerShare);
 
             if (amountToSend >= 1) {
-                try {
-                    await triggerB2C(sellerPhone, amountToSend, `Payout - Post ${transaction.postID}`);
-                    console.log(`🚀 B2C sent ${amountToSend} KES to ${sellerPhone}`);
-                } catch (err) {
-                    console.error("❌ B2C disbursement failed:", err.message);
-                    // Flag for manual review if B2C payout fails after successful customer payment
-                }
+                // Non-blocking asynchronous execution so B2C delay doesn't crash callback worker
+                setImmediate(async () => {
+                    try {
+                        console.log(`⏳ Initiating payout of ${amountToSend} KES to seller: ${sellerPhone}`);
+                        await triggerB2C(sellerPhone, amountToSend, `Payout - Post ${transaction.postID}`);
+                        console.log(`🚀 B2C Payout successfully dispatched to ${sellerPhone}`);
+                    } catch (b2cErr) {
+                        console.error(`❌ [B2C FAILURE] Payout failed for transaction ${transaction._id}:`, b2cErr.message);
+                        // Flag in DB for manual admin payout reconciliation
+                        await Transaction.updateOne(
+                            { _id: transaction._id },
+                            { $set: { b2cStatus: 'FAILED', b2cError: b2cErr.message } }
+                        ).catch(console.error);
+                    }
+                });
             }
         }
-
-        // ===== UNLOCK CONTENT (Idempotent Upsert) =====
-        await Unlock.updateOne(
-            { postID: transaction.postID, userPhone: transaction.userPhone },
-            {
-                $setOnInsert: {
-                    amountPaid: amount,
-                    mpesaReceipt: mpesaReceipt,
-                    unlockedAt: new Date()
-                }
-            },
-            { upsert: true }
-        );
-
-        console.log(`🔓 Content safely unlocked for ${transaction.userPhone}`);
-
-    } catch (error) {
-        console.error("Critical STK Callback Processing Error:", error);
     }
 });
+
 
 // Express route handler for MPESA_B2C_RESULT_URL
 // ====================== B2C RESULT ======================
