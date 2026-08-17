@@ -1630,155 +1630,281 @@ async function handleClaimPayouts(countryCode = 'US') {
 }
 
 // M-PESA POLLING
-async function startPaymentPolling(checkoutID, btn, originalText, postId = null) {
+async function startPaymentPolling(
+  checkoutID,
+  btn,
+  originalText,
+  postId = null
+) {
   let attempts = 0;
+  let stopped = false;
+  let pollTimer = null;
 
-  const poll = setInterval(async () => {
+  const MAX_ATTEMPTS = 40;
+  const POLL_INTERVAL = 3000;
+
+  const stopPolling = () => {
+    stopped = true;
+
+    if (pollTimer) {
+      clearTimeout(pollTimer);
+      pollTimer = null;
+    }
+  };
+
+  const resetButton = (text = originalText) => {
+    if (btn) {
+      btn.disabled = false;
+      btn.classList.remove("processing-payout");
+      btn.innerText = text;
+    }
+  };
+
+  const poll = async () => {
+    if (stopped) return;
+
     attempts++;
 
     try {
-      const sRes = await fetch(`${API_URL}/stk-status/${checkoutID}`);
+      const sRes = await fetch(
+        `${API_URL}/stk-status/${encodeURIComponent(checkoutID)}`,
+        {
+          method: "GET",
+          cache: "no-store",
+          headers: {
+            "Accept": "application/json"
+          }
+        }
+      );
+
+      if (!sRes.ok) {
+        throw new Error(
+          `STATUS_HTTP_${sRes.status}`
+        );
+      }
+
       const s = await sRes.json();
 
-      const status = (s.status || '')
+      const status = (s.status || "")
         .toString()
         .toLowerCase()
         .trim();
 
       console.log(
-        `🔄 Payment polling | Checkout: ${checkoutID} | Status: ${status} | Attempt: ${attempts}`
+        `🔄 Payment polling | Checkout: ${checkoutID} | Status: ${status} | Attempt: ${attempts}/${MAX_ATTEMPTS}`
       );
 
-      // ============================================================
+      // ==========================================================
       // PAYMENT COMPLETED
-      // ============================================================
+      // ==========================================================
 
-      if (status === 'completed' || status === 'success') {
-        clearInterval(poll);
+      if (
+        status === "completed" ||
+        status === "success"
+      ) {
+        stopPolling();
 
-        showToast("🔓 Payment confirmed. Asset unlocked.");
+        console.log(
+          `✅ PAYMENT CONFIRMED | Checkout: ${checkoutID}`
+        );
 
-        // Refresh posts so unlocked_by/access state is reflected
-        // in the frontend.
-        await fetchPosts();
+        // --------------------------------------------------------
+        // Refresh application state first
+        // --------------------------------------------------------
 
-        resetUnlockBtn(btn, originalText);
-
-        // IMPORTANT:
-        // Do NOT call unlockIP() again.
-        //
-        // Payment is already complete.
-        // The media endpoint will now verify access using:
-        //
-        // /api/media/:postId?phone=...
-        //
-        // If postId is available, reload the media directly.
-        if (postId) {
-          console.log(
-            `🎬 Payment complete. Attempting media for post ${postId}`
+        try {
+          await fetchPosts();
+        } catch (refreshErr) {
+          console.warn(
+            "⚠️ Post refresh failed after payment:",
+            refreshErr
           );
+        }
 
+        // --------------------------------------------------------
+        // Verify actual media authorization
+        // --------------------------------------------------------
+
+        if (postId) {
           try {
             const mediaRes = await fetch(
-              `${API_URL}/api/media/${postId}?phone=${encodeURIComponent(currentUser.identity)}`,
+              `${API_URL}/api/media/${encodeURIComponent(postId)}?phone=${encodeURIComponent(currentUser.identity)}`,
               {
-                method: 'GET',
-                redirect: 'follow'
+                method: "GET",
+                cache: "no-store",
+                redirect: "follow"
               }
             );
 
             if (!mediaRes.ok) {
-              console.error(
-                `❌ Media request failed after payment: ${mediaRes.status}`
+              console.warn(
+                `⚠️ Payment completed but media authorization returned ${mediaRes.status}`
               );
 
               showToast(
-                "✅ Payment confirmed. Video processing failed — you can retry viewing without paying again."
+                "✅ Payment received. Your access is still synchronizing. Please try viewing the content again."
               );
+
+              resetButton("CHECK PAYMENT");
 
               return;
             }
 
             console.log(
-              "✅ Media endpoint authorized successfully."
+              "🔓 Media authorization confirmed."
             );
 
-            // Refresh UI so the unlocked asset can be viewed.
-            await fetchPosts();
+            showToast(
+              "🔓 Payment confirmed. Asset unlocked."
+            );
+
+            resetButton(originalText);
+
+            // Refresh once more so UI reflects unlocked state
+            try {
+              await fetchPosts();
+            } catch (refreshErr) {
+              console.warn(
+                "⚠️ Final UI refresh failed:",
+                refreshErr
+              );
+            }
+
+            return;
 
           } catch (mediaErr) {
             console.error(
-              "❌ Media processing error after payment:",
+              "❌ Media authorization error:",
               mediaErr
             );
 
             showToast(
-              "✅ Payment confirmed. Video processing is still unavailable. Retry viewing without paying again."
+              "✅ Payment received. Your content is still synchronizing. Please try again shortly."
             );
+
+            resetButton("CHECK PAYMENT");
+
+            return;
           }
         }
 
-        return;
-      }
+        // --------------------------------------------------------
+        // No postId supplied
+        // --------------------------------------------------------
 
-      // ============================================================
-      // PAYMENT FAILED / CANCELLED
-      // ============================================================
-
-      if (
-        status === 'failed' ||
-        status === 'cancelled'
-      ) {
-        clearInterval(poll);
-
-        showToast("❌ Payment Failed.");
-
-        resetUnlockBtn(
-          btn,
-          originalText
+        showToast(
+          "🔓 Payment confirmed successfully."
         );
 
+        resetButton(originalText);
+
         return;
       }
 
-    } catch (e) {
+      // ==========================================================
+      // PAYMENT FAILED
+      // ==========================================================
+
+      if (
+        status === "failed" ||
+        status === "cancelled"
+      ) {
+        stopPolling();
+
+        console.error(
+          `❌ PAYMENT FAILED | Checkout: ${checkoutID} | Status: ${status}`
+        );
+
+        showToast(
+          status === "cancelled"
+            ? "❌ M-PESA payment was cancelled."
+            : "❌ M-PESA payment failed."
+        );
+
+        resetButton(originalText);
+
+        return;
+      }
+
+      // ==========================================================
+      // TRANSACTION NOT FOUND
+      // ==========================================================
+
+      if (status === "not_found") {
+        console.warn(
+          `⚠️ Transaction not yet visible | Checkout: ${checkoutID}`
+        );
+
+        // Give the backend time to create/sync the transaction.
+        // Do NOT immediately treat this as payment failure.
+      }
+
+      // ==========================================================
+      // UNKNOWN STATUS
+      // ==========================================================
+
+      if (
+        status &&
+        ![
+          "pending",
+          "processing",
+          "initiated",
+          "not_found",
+          "completed",
+          "success",
+          "failed",
+          "cancelled"
+        ].includes(status)
+      ) {
+        console.warn(
+          `⚠️ Unknown payment status: ${status}`
+        );
+      }
+
+    } catch (err) {
       console.error(
-        "⚠️ Payment polling error:",
-        e
+        `⚠️ Payment polling error | Attempt ${attempts}:`,
+        err
       );
+
+      // Network/status errors do NOT immediately mean payment failed.
+      // Continue polling because the customer may already have paid.
     }
 
-    // ============================================================
-    // VERIFICATION TIMEOUT
-    // ============================================================
+    // ==========================================================
+    // TIMEOUT
+    // ==========================================================
 
-    if (attempts > 30) {
-      clearInterval(poll);
+    if (attempts >= MAX_ATTEMPTS) {
+      stopPolling();
 
       console.warn(
-        `⌛ Payment verification timeout for ${checkoutID}`
+        `⌛ PAYMENT VERIFICATION TIMEOUT | Checkout: ${checkoutID}`
       );
-
-      /*
-       * IMPORTANT:
-       *
-       * Do NOT say "RETRY UNLOCK".
-       * The user may already have paid.
-       *
-       * A timeout means we don't yet know the final payment state.
-       */
 
       showToast(
-        "⌛ Payment verification is taking longer than expected. Please check your transaction status before trying to pay again."
+        "⌛ Payment verification is taking longer than expected. Your payment may still be processing. Please check again before making another payment."
       );
 
-      resetUnlockBtn(
-        btn,
-        "CHECK PAYMENT"
-      );
+      resetButton("CHECK PAYMENT");
+
+      return;
     }
 
-  }, 3000);
+    // ==========================================================
+    // SCHEDULE NEXT POLL
+    // ==========================================================
+
+    if (!stopped) {
+      pollTimer = setTimeout(
+        poll,
+        POLL_INTERVAL
+      );
+    }
+  };
+
+  // Start immediately instead of waiting 3 seconds
+  await poll();
 }
 function closeStripeModal() {
   const modal = document.getElementById('stripe-modal');
