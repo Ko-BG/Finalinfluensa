@@ -3104,6 +3104,222 @@ app.post('/api/posts/:id/unlock', async (req, res) => {
         });
     }
 });
+app.post('/api/mpesa/stk/callback', async (req, res) => {
+    try {
+        const callback =
+            req.body?.Body?.stkCallback;
+
+        console.log(
+            "📥 STK CALLBACK:",
+            JSON.stringify(callback, null, 2)
+        );
+
+        // Acknowledge Safaricom immediately
+        res.status(200).json({
+            ResultCode: 0,
+            ResultDesc: "Accepted"
+        });
+
+        if (!callback) {
+            console.error("❌ EMPTY STK CALLBACK");
+            return;
+        }
+
+        const checkoutID =
+            callback.CheckoutRequestID;
+
+        const resultCode =
+            Number(callback.ResultCode);
+
+        const resultDesc =
+            callback.ResultDesc || "";
+
+        if (!checkoutID) {
+            console.error(
+                "❌ STK CALLBACK MISSING CHECKOUT ID"
+            );
+            return;
+        }
+
+        // =====================================================
+        // FIND OUR PENDING TRANSACTION
+        // =====================================================
+
+        const transaction =
+            await Transaction.findOne({
+                checkoutID: checkoutID
+            });
+
+        if (!transaction) {
+            console.error(
+                "❌ TRANSACTION NOT FOUND:",
+                checkoutID
+            );
+            return;
+        }
+
+        // =====================================================
+        // IDEMPOTENCY
+        // =====================================================
+
+        if (transaction.status === "completed") {
+            console.log(
+                "ℹ️ STK ALREADY COMPLETED:",
+                checkoutID
+            );
+            return;
+        }
+
+        // =====================================================
+        // PAYMENT FAILED / CANCELLED
+        // =====================================================
+
+        if (resultCode !== 0) {
+
+            transaction.status = "failed";
+
+            transaction.resultCode =
+                resultCode;
+
+            transaction.resultDesc =
+                resultDesc;
+
+            transaction.failedAt =
+                new Date();
+
+            await transaction.save();
+
+            console.error(
+                `❌ STK PAYMENT FAILED | ${checkoutID} | ${resultCode} | ${resultDesc}`
+            );
+
+            return;
+        }
+
+        // =====================================================
+        // PAYMENT SUCCESS
+        // =====================================================
+
+        const metadata =
+            callback.CallbackMetadata?.Item || [];
+
+        const getMetadata = (name) => {
+            return metadata.find(
+                item => item.Name === name
+            )?.Value;
+        };
+
+        const mpesaReceiptNumber =
+            getMetadata("MpesaReceiptNumber");
+
+        const amount =
+            Number(
+                getMetadata("Amount") ||
+                transaction.amountPaid
+            );
+
+        const phone =
+            getMetadata("PhoneNumber") ||
+            transaction.userPhone;
+
+        console.log(
+            `✅ STK PAYMENT SUCCESS | KES ${amount} | Receipt: ${mpesaReceiptNumber}`
+        );
+
+        // =====================================================
+        // VERIFY AMOUNT
+        // =====================================================
+
+        if (
+            Math.abs(
+                Number(transaction.amountPaid) -
+                amount
+            ) > 0.01
+        ) {
+
+            transaction.status = "failed";
+
+            transaction.resultCode = -1;
+
+            transaction.resultDesc =
+                "PAYMENT_AMOUNT_MISMATCH";
+
+            transaction.failedAt =
+                new Date();
+
+            await transaction.save();
+
+            console.error(
+                "🚨 STK AMOUNT MISMATCH:",
+                {
+                    expected:
+                        transaction.amountPaid,
+                    received:
+                        amount,
+                    checkoutID
+                }
+            );
+
+            return;
+        }
+
+        // =====================================================
+        // SAVE M-PESA RECEIPT
+        // =====================================================
+
+        transaction.transactionID =
+            mpesaReceiptNumber;
+
+        transaction.resultCode =
+            resultCode;
+
+        transaction.resultDesc =
+            resultDesc;
+
+        transaction.userPhone =
+            cleanPhone(phone);
+
+        await transaction.save();
+
+        // =====================================================
+        // SETTLE CREATOR 92% / PLATFORM 8%
+        // =====================================================
+
+        const settlement =
+            await settleSuccessfulContentPurchase({
+                transactionId:
+                    mpesaReceiptNumber,
+
+                postId:
+                    transaction.postID,
+
+                payerPhone:
+                    cleanPhone(phone),
+
+                amount,
+
+                receiptNumber:
+                    mpesaReceiptNumber
+            });
+
+        console.log(
+            "💰 STK SETTLEMENT COMPLETE:",
+            JSON.stringify(
+                settlement,
+                null,
+                2
+            )
+        );
+
+    } catch (err) {
+
+        console.error(
+            "❌ STK CALLBACK ERROR:",
+            err
+        );
+    }
+});
+
 async function creditCreatorSale({
     creatorId,
     grossAmount,
