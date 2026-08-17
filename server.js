@@ -3488,7 +3488,8 @@ async function settleSuccessfulContentPurchase({
             if (transaction.status === "completed") {
                 settlementResult = {
                     alreadyProcessed: true,
-                    creatorAmount: transaction.creatorAmount
+                    creatorAmount: transaction.creatorAmount,
+                    platformFee: transaction.platformFee
                 };
 
                 return;
@@ -3498,49 +3499,55 @@ async function settleSuccessfulContentPurchase({
             // 3. FIND POST
             // =====================================================
 
-            const post = await Post.findById(
-                postId
-            ).session(session);
+            const post = await Post.findById(postId)
+                .session(session);
 
             if (!post) {
                 throw new Error("POST_NOT_FOUND");
             }
 
-          // =================================================
-// 4. FIND CREATOR FROM post.owner
-// =================================================
-
-if (!post.owner) {
-    throw new Error("POST_OWNER_MISSING");
-}
-
-const creatorIdentity =
-    cleanPhone(post.owner);
-
-const creator =
-    await User.findOne({
-        identity: cleanPhone(post.owner)
-    }).session(session);
-
-if (!creator) {
-    throw new Error("CREATOR_NOT_FOUND");
-}
+            if (!post.owner) {
+                throw new Error("POST_OWNER_MISSING");
+            }
 
             // =====================================================
-            // 5. CALCULATE 8% / 92%
+            // 4. NORMALIZE BUYER + CREATOR
+            // =====================================================
+
+            const buyerIdentity =
+                cleanPhone(payerPhone);
+
+            const creatorIdentity =
+                cleanPhone(post.owner);
+
+            // =====================================================
+            // 5. FIND CREATOR
+            // =====================================================
+
+            const creator = await User.findOne({
+                identity: creatorIdentity
+            }).session(session);
+
+            if (!creator) {
+                throw new Error("CREATOR_NOT_FOUND");
+            }
+
+            // =====================================================
+            // 6. CALCULATE 8% / 92%
             // =====================================================
 
             const split =
                 calculateCreatorSplit(amount);
 
             // =====================================================
-            // 6. VERIFY PAYMENT AMOUNT
+            // 7. VERIFY PAYMENT AMOUNT
             // =====================================================
 
             const transactionAmount =
                 Number(transaction.amountPaid);
 
             if (
+                !Number.isFinite(transactionAmount) ||
                 Math.abs(
                     transactionAmount -
                     split.gross
@@ -3552,11 +3559,31 @@ if (!creator) {
             }
 
             // =====================================================
-            // 7. CREDIT CREATOR
+            // 8. GRANT BUYER ACCESS
+            // =====================================================
+
+            if (!Array.isArray(post.unlocked_by)) {
+                post.unlocked_by = [];
+            }
+
+            if (!post.unlocked_by.includes(buyerIdentity)) {
+                post.unlocked_by.push(
+                    buyerIdentity
+                );
+            }
+
+            await post.save({
+                session
+            });
+
+            // =====================================================
+            // 9. CREDIT CREATOR 92%
             // =====================================================
 
             const balanceBefore =
-                Number(creator.earnings || 0);
+                Number(
+                    creator.earnings || 0
+                );
 
             const balanceAfter =
                 Number(
@@ -3566,14 +3593,15 @@ if (!creator) {
                     ).toFixed(2)
                 );
 
-            creator.earnings = balanceAfter;
+            creator.earnings =
+                balanceAfter;
 
             await creator.save({
                 session
             });
 
             // =====================================================
-            // 8. CREATE IMMUTABLE CREATOR LEDGER
+            // 10. CREATE IMMUTABLE CREATOR LEDGER
             // =====================================================
 
             const creatorReference =
@@ -3587,7 +3615,8 @@ if (!creator) {
 
                     direction: "CREDIT",
 
-                    amount: split.creatorAmount,
+                    amount:
+                        split.creatorAmount,
 
                     currency: "KES",
 
@@ -3595,7 +3624,8 @@ if (!creator) {
 
                     balanceAfter,
 
-                    reference: creatorReference,
+                    reference:
+                        creatorReference,
 
                     metadata: {
                         transactionId,
@@ -3603,7 +3633,8 @@ if (!creator) {
                         postId:
                             post._id.toString(),
 
-                        payerPhone,
+                        payerPhone:
+                            buyerIdentity,
 
                         grossAmount:
                             split.gross,
@@ -3614,9 +3645,11 @@ if (!creator) {
                         creatorAmount:
                             split.creatorAmount,
 
-                        platformShare: 0.08,
+                        platformShare:
+                            0.08,
 
-                        creatorShare: 0.92,
+                        creatorShare:
+                            0.92,
 
                         receiptNumber
                     }
@@ -3627,7 +3660,7 @@ if (!creator) {
             );
 
             // =====================================================
-            // 9. MARK PAYMENT COMPLETED
+            // 11. MARK TRANSACTION COMPLETED
             // =====================================================
 
             transaction.status =
@@ -3639,6 +3672,7 @@ if (!creator) {
             transaction.creatorAmount =
                 split.creatorAmount;
 
+            // creatorId = creator phone
             transaction.creatorId =
                 creatorIdentity;
 
@@ -3648,7 +3682,8 @@ if (!creator) {
             transaction.completedAt =
                 new Date();
 
-            transaction.resultCode = 0;
+            transaction.resultCode =
+                0;
 
             transaction.resultDesc =
                 "Payment completed";
@@ -3657,11 +3692,15 @@ if (!creator) {
                 session
             });
 
+            // =====================================================
+            // 12. RETURN SETTLEMENT
+            // =====================================================
+
             settlementResult = {
                 alreadyProcessed: false,
 
                 creatorId:
-                    creator._id,
+                    creatorIdentity,
 
                 creatorAmount:
                     split.creatorAmount,
@@ -3670,7 +3709,12 @@ if (!creator) {
                     split.platformFee,
 
                 gross:
-                    split.gross
+                    split.gross,
+
+                buyer:
+                    buyerIdentity,
+
+                accessGranted: true
             };
         });
 
@@ -3680,178 +3724,6 @@ if (!creator) {
         await session.endSession();
     }
 }
-app.post('/api/mpesa/c2b/confirmation', async (req, res) => {
-
-    // Acknowledge Safaricom immediately
-    res.status(200).json({
-        ResultCode: 0,
-        ResultDesc: "Accepted"
-    });
-
-    try {
-
-        console.log(
-            "📥 C2B CONFIRMATION:",
-            JSON.stringify(
-                req.body,
-                null,
-                2
-            )
-        );
-
-        const body = req.body || {};
-
-        // =====================================================
-        // DARaja C2B FIELDS
-        // =====================================================
-
-        const transactionType =
-            body.TransactionType;
-
-        const transactionId =
-            body.TransID;
-
-        const transactionTime =
-            body.TransTime;
-
-        const amount =
-            Number(body.TransAmount);
-
-        const businessShortCode =
-            body.BusinessShortCode;
-
-        const billRefNumber =
-            body.BillRefNumber;
-
-        const invoiceNumber =
-            body.InvoiceNumber;
-
-        const thirdPartyTransId =
-            body.ThirdPartyTransID;
-
-        const phone =
-            cleanPhone(
-                body.MSISDN
-            );
-
-        // =====================================================
-        // VALIDATION
-        // =====================================================
-
-        if (
-            !transactionId ||
-            !Number.isFinite(amount) ||
-            amount <= 0
-        ) {
-            console.error(
-                "❌ Invalid C2B confirmation"
-            );
-
-            return;
-        }
-
-        // =====================================================
-        // FIND ORIGINAL TRANSACTION
-        // =====================================================
-
-        const transaction =
-            await Transaction.findOne({
-                transactionID:
-                    transactionId
-            });
-
-        if (!transaction) {
-
-            console.error(
-                "⚠️ C2B transaction not found:",
-                transactionId
-            );
-
-            return;
-        }
-
-        // =====================================================
-        // ALREADY PROCESSED
-        // =====================================================
-
-        if (
-            transaction.status ===
-            "completed"
-        ) {
-
-            console.log(
-                "ℹ️ Duplicate C2B callback ignored:",
-                transactionId
-            );
-
-            return;
-        }
-
-        // =====================================================
-        // VERIFY AMOUNT
-        // =====================================================
-
-        if (
-            Math.abs(
-                Number(
-                    transaction.amountPaid
-                ) - amount
-            ) > 0.01
-        ) {
-
-            console.error(
-                `🚨 PAYMENT AMOUNT MISMATCH | Expected ${transaction.amountPaid} | Received ${amount}`
-            );
-
-            transaction.status =
-                "failed";
-
-            transaction.resultCode =
-                -1;
-
-            transaction.resultDesc =
-                "Payment amount mismatch";
-
-            transaction.failedAt =
-                new Date();
-
-            await transaction.save();
-
-            return;
-        }
-
-        // =====================================================
-        // SETTLE PAYMENT
-        // =====================================================
-
-        const settlement =
-            await settleSuccessfulContentPurchase({
-                transactionId,
-                postId:
-                    transaction.postID,
-                payerPhone: phone,
-                amount,
-                receiptNumber:
-                    transactionId
-            });
-
-        console.log(
-            "💰 C2B SETTLEMENT:",
-            JSON.stringify(
-                settlement,
-                null,
-                2
-            )
-        );
-
-    } catch (err) {
-
-        console.error(
-            "❌ C2B CONFIRMATION ERROR:",
-            err
-        );
-    }
-});
 async function triggerB2C(
     phone,
     amount,
