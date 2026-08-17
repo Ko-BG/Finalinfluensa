@@ -5490,556 +5490,1034 @@ app.post('/api/nodes/connect', async (req, res) => {
 });
 
 // --- HIGH-SPEED READ-ONLY POLLING ROUTE (FIXED) ---
-app.get('/api/stk-status/:checkoutID', async (req, res) => {
-    try {
-        const tx = await Transaction.findOne({ checkoutID: req.params.checkoutID }).lean();
-        
-        if (!tx) {
-            return res.json({ status: 'not_found' });
-        }
-
-        // NOTE: No database updates happen here anymore. 
-        // The webhook does it instantly. This just returns the status.
-        res.json({ status: tx.status });
-    } catch (err) { 
-        console.error("Polling system failure:", err);
-        res.status(500).json({ error: "Polling failed" }); 
-    }
-});
-
-
-
 app.get('/api/media/:postId', async (req, res) => {
+
     let tempInput = null;
     let tempOutput = null;
 
     try {
+
         // ============================================================
-        // 1. AUTHENTICATION
+        // 1. VALIDATE REQUEST
         // ============================================================
+
         const { phone } = req.query;
+        const { postId } = req.params;
 
         if (!phone) {
-            return res.status(401).send("PHONE_REQUIRED");
+            return res.status(401).json({
+                error: "PHONE_REQUIRED"
+            });
         }
 
-        if (!mongoose.Types.ObjectId.isValid(req.params.postId)) {
-            return res.status(400).send("INVALID_POST_ID");
+        if (!mongoose.Types.ObjectId.isValid(postId)) {
+            return res.status(400).json({
+                error: "INVALID_POST_ID"
+            });
+        }
+
+        const cleaned = cleanPhone(phone);
+
+        if (!cleaned) {
+            return res.status(400).json({
+                error: "INVALID_PHONE"
+            });
         }
 
         // ============================================================
         // 2. FIND POST
         // ============================================================
+
         const post = await Post.findOne({
-            _id: req.params.postId,
+            _id: postId,
             is_burned: false
-        });
+        })
+        .select(
+            "_id owner unlocked_by licensed_to filekey mime is_burned"
+        )
+        .lean();
 
         if (!post) {
-            return res.status(404).send("NOT_FOUND");
+            return res.status(404).json({
+                error: "NOT_FOUND"
+            });
         }
 
         // ============================================================
-        // 3. CLEAN PHONE + ACCESS CONTROL
+        // 3. DETERMINE OWNER / LICENSE ACCESS
         // ============================================================
-        const cleaned = cleanPhone(phone);
+
+        const ownerIdentity =
+            cleanPhone(post.owner || "");
 
         const isOwner =
-            post.owner === cleaned;
-
-        const isUnlocked =
-            (post.unlocked_by || []).includes(cleaned);
+            ownerIdentity === cleaned;
 
         const isLicensed =
-            (post.licensed_to || []).includes(cleaned);
+            Array.isArray(post.licensed_to) &&
+            post.licensed_to.some(
+                identity =>
+                    cleanPhone(identity) === cleaned
+            );
 
-        if (!(isOwner || isUnlocked || isLicensed)) {
-            return res.status(403).send("LOCKED");
+        // ============================================================
+        // 4. VERIFY BUYER PURCHASE
+        //
+        // IMPORTANT:
+        //
+        // unlocked_by alone is NOT sufficient for an ordinary buyer.
+        //
+        // We require:
+        //
+        //   1. The phone exists in unlocked_by
+        //   2. A matching transaction exists
+        //   3. Transaction status = completed
+        //   4. Transaction belongs to this post
+        //   5. Transaction belongs to this phone
+        //
+        // This means the media route does not create authorization.
+        // The payment/settlement system must create it first.
+        // ============================================================
+
+        let completedPurchase = null;
+
+        if (!isOwner && !isLicensed) {
+
+            const unlocked =
+                Array.isArray(post.unlocked_by) &&
+                post.unlocked_by.some(
+                    identity =>
+                        cleanPhone(identity) === cleaned
+                );
+
+            if (!unlocked) {
+
+                console.warn(
+                    "🔒 MEDIA ACCESS DENIED — NOT UNLOCKED",
+                    {
+                        postId,
+                        phoneSuffix: cleaned.slice(-4)
+                    }
+                );
+
+                return res.status(403).json({
+                    error: "LOCKED"
+                });
+            }
+
+            completedPurchase =
+                await Transaction.findOne({
+
+                    postID: post._id,
+
+                    userPhone: cleaned,
+
+                    status: "completed",
+
+                    type: {
+                        $in: [
+                            "unlock",
+                            "content_purchase"
+                        ]
+                    }
+
+                })
+                .select(
+                    "_id transactionID amountPaid completedAt"
+                )
+                .sort({
+                    completedAt: -1
+                })
+                .lean();
+
+            if (!completedPurchase) {
+
+                console.warn(
+                    "🔒 MEDIA ACCESS DENIED — NO COMPLETED PURCHASE",
+                    {
+                        postId,
+                        phoneSuffix: cleaned.slice(-4)
+                    }
+                );
+
+                return res.status(403).json({
+                    error: "PAYMENT_NOT_CONFIRMED"
+                });
+            }
+        }
+
+        console.log(
+            "🔓 MEDIA ACCESS AUTHORIZED",
+            {
+                postId,
+                owner: isOwner,
+                licensed: isLicensed,
+                purchased: !!completedPurchase,
+                phoneSuffix: cleaned.slice(-4)
+            }
+        );
+
+        // ============================================================
+        // 5. VERIFY ORIGINAL FILE KEY
+        // ============================================================
+
+        const originalKey = post.filekey;
+
+        if (
+            !originalKey ||
+            typeof originalKey !== "string"
+        ) {
+
+            console.error(
+                "❌ FILE_KEY_MISSING",
+                {
+                    postId
+                }
+            );
+
+            return res.status(404).json({
+                error: "FILE_KEY_MISSING"
+            });
         }
 
         // ============================================================
-        // 4. ORIGINAL S3 KEY
-        // IMPORTANT:
-        // Use ONLY the real S3 key stored in post.filekey.
-        // Do NOT fall back to filename or files.
+        // 6. DETERMINE MEDIA TYPE
         // ============================================================
-       const originalKey = post.filekey;
 
-if (!originalKey || typeof originalKey !== "string") {
-    console.error("❌ FILE_KEY_MISSING", {
-        postId: post._id.toString(),
-        filekey: post.filekey,
-        filename: post.filename
-    });
+        const mime =
+            String(post.mime || "")
+                .toLowerCase()
+                .trim();
 
-    return res.status(404).send("FILE_KEY_MISSING");
-}
+        let extension = null;
 
-console.log("==========================================");
-console.log("🎬 MEDIA REQUEST");
-console.log("Post ID:", post._id.toString());
-console.log("Buyer:", cleaned);
-console.log("Original S3 Key:", originalKey);
-console.log("==========================================");
+        if (mime.startsWith("image/")) {
 
+            extension =
+                mime.split("/")[1] || "jpg";
 
+        } else if (mime.startsWith("video/")) {
+
+            extension = "mp4";
+
+        } else if (mime.startsWith("audio/")) {
+
+            extension =
+                mime.split("/")[1] || "mp3";
+
+        } else {
+
+            return res.status(415).json({
+                error: "UNSUPPORTED_MEDIA_TYPE"
+            });
+        }
 
         // ============================================================
-        // 5. VERIFY ORIGINAL FILE EXISTS IN S3
-        // This catches NoSuchKey BEFORE watermark processing.
+        // 7. VERIFY ORIGINAL EXISTS
         // ============================================================
+
         try {
+
             await s3.send(
                 new HeadObjectCommand({
-                    Bucket: process.env.AWS_S3_BUCKET_NAME,
-                    Key: originalKey
+                    Bucket:
+                        process.env.AWS_S3_BUCKET_NAME,
+
+                    Key:
+                        originalKey
                 })
             );
 
-            console.log("✅ Original file exists in S3:", originalKey);
-
         } catch (err) {
-            console.error("❌ ORIGINAL FILE NOT FOUND IN S3", {
-                bucket: process.env.AWS_S3_BUCKET_NAME,
-                key: originalKey,
-                errorName: err.name,
-                message: err.message,
-                status: err.$metadata?.httpStatusCode
-            });
+
+            const status =
+                err.$metadata?.httpStatusCode;
 
             if (
                 err.name === "NotFound" ||
                 err.name === "NoSuchKey" ||
-                err.$metadata?.httpStatusCode === 404
+                status === 404
             ) {
-                return res.status(404).send("ORIGINAL_FILE_NOT_FOUND");
+
+                console.error(
+                    "❌ ORIGINAL FILE NOT FOUND",
+                    {
+                        postId
+                    }
+                );
+
+                return res.status(404).json({
+                    error: "ORIGINAL_FILE_NOT_FOUND"
+                });
             }
 
             throw err;
         }
 
         // ============================================================
-        // 6. WATERMARK KEY
-        // One watermarked copy per authorized phone/buyer.
+        // 8. BUYER-SPECIFIC WATERMARK ID
+        //
+        // DO NOT PUT THE RAW PHONE NUMBER INTO THE S3 KEY.
+        //
+        // Hashing prevents the phone number from becoming part of
+        // the object path while still giving every buyer a stable
+        // deterministic object.
         // ============================================================
-      const mime = (post.mime || "").toLowerCase();
 
-let extension = "bin";
+        const crypto =
+            require("crypto");
 
-if (mime.startsWith("image/")) {
-    extension = mime.split("/")[1] || "jpg";
-} else if (mime.startsWith("video/")) {
-    extension = "mp4";
-} else if (mime.startsWith("audio/")) {
-    extension = mime.split("/")[1] || "mp3";
-}
+        const buyerHash =
+            crypto
+                .createHash("sha256")
+                .update(cleaned)
+                .digest("hex")
+                .slice(0, 32);
 
-const watermarkKey =
-    `watermarked/${post._id}_${cleaned}.${extension}`;
+        const watermarkKey =
+            `watermarked/${post._id}_${buyerHash}.${extension}`;
 
-console.log("💧 Watermark Key:", watermarkKey);
         // ============================================================
-        // 7. CHECK IF WATERMARKED VERSION ALREADY EXISTS
+        // 9. CHECK EXISTING WATERMARKED COPY
         // ============================================================
-        let needsWatermark = false;
+
+        let watermarkExists = false;
 
         try {
+
             await s3.send(
                 new HeadObjectCommand({
-                    Bucket: process.env.AWS_S3_BUCKET_NAME,
-                    Key: watermarkKey
+                    Bucket:
+                        process.env.AWS_S3_BUCKET_NAME,
+
+                    Key:
+                        watermarkKey
                 })
             );
 
+            watermarkExists = true;
+
             console.log(
-                "✅ Watermarked file already exists:",
+                "✅ Existing protected media:",
                 watermarkKey
             );
 
         } catch (err) {
 
+            const status =
+                err.$metadata?.httpStatusCode;
+
             if (
-                err.name === "NotFound" ||
-                err.name === "NoSuchKey" ||
-                err.$metadata?.httpStatusCode === 404
+                err.name !== "NotFound" &&
+                err.name !== "NoSuchKey" &&
+                status !== 404
             ) {
-                needsWatermark = true;
-
-                console.log(
-                    "🆕 Watermarked file does not exist:",
-                    watermarkKey
-                );
-
-            } else {
-                console.error(
-                    "❌ S3 watermark existence check failed:",
-                    err
-                );
-
                 throw err;
             }
         }
 
         // ============================================================
-        // 8. CREATE WATERMARKED VERSION IF NEEDED
+        // 10. CREATE BUYER-SPECIFIC PROTECTED COPY
         // ============================================================
-        if (needsWatermark) {
 
-            console.log(
-                `🎬 Creating watermarked version for ${cleaned}...`
-            );
+        if (!watermarkExists) {
 
-            console.log(
-                "Bucket:",
-                process.env.AWS_S3_BUCKET_NAME
-            );
+            const uniqueId =
+                `${Date.now()}_${crypto
+                    .randomBytes(6)
+                    .toString("hex")}`;
 
-            console.log(
-                "Original S3 Key:",
-                originalKey
-            );
+            tempInput =
+                path.join(
+                    "/tmp",
+                    `in_${uniqueId}.${extension}`
+                );
 
-            console.log(
-                "Watermark S3 Key:",
-                watermarkKey
-            );
-
-            // ========================================================
-            // 8A. CREATE TEMPORARY SIGNED URL
-            // ========================================================
-            const command = new GetObjectCommand({
-                Bucket: process.env.AWS_S3_BUCKET_NAME,
-                Key: originalKey
-            });
-
-            const originalUrl = await getSignedUrl(
-                s3,
-                command,
-                {
-                    expiresIn: 300
-                }
-            );
-
-            console.log("✅ Signed URL generated");
+            tempOutput =
+                path.join(
+                    "/tmp",
+                    `out_${uniqueId}.${extension}`
+                );
 
             // ========================================================
-            // 8B. TEMPORARY LOCAL FILES
+            // 10A. DOWNLOAD ORIGINAL FROM PRIVATE S3
             // ========================================================
-            const timestamp = Date.now();
 
-          const tempInput = path.join(
-    '/tmp',
-    `in_${Date.now()}.${extension}`
-);
+            const originalCommand =
+                new GetObjectCommand({
+                    Bucket:
+                        process.env.AWS_S3_BUCKET_NAME,
 
-const tempOutput = path.join(
-    '/tmp',
-    `out_${Date.now()}.${extension}`
-);
+                    Key:
+                        originalKey
+                });
 
-            // ========================================================
-            // 8C. DOWNLOAD ORIGINAL FILE
-            // ========================================================
-            const response = await fetch(originalUrl);
+            const originalUrl =
+                await getSignedUrl(
+                    s3,
+                    originalCommand,
+                    {
+                        expiresIn: 300
+                    }
+                );
 
-            if (!response.ok) {
+            const downloadResponse =
+                await fetch(originalUrl);
 
-                const errorText = await response.text();
+            if (!downloadResponse.ok) {
 
                 console.error(
                     "❌ S3 DOWNLOAD FAILED",
                     {
-                        status: response.status,
-                        statusText: response.statusText,
-                        errorText
+                        status:
+                            downloadResponse.status,
+                        postId
                     }
                 );
 
-                return res.status(500).send(
-                    "S3_DOWNLOAD_FAILED"
-                );
+                return res.status(502).json({
+                    error: "S3_DOWNLOAD_FAILED"
+                });
             }
 
             const arrayBuffer =
-                await response.arrayBuffer();
-
-            const buffer =
-                Buffer.from(arrayBuffer);
+                await downloadResponse.arrayBuffer();
 
             fs.writeFileSync(
                 tempInput,
-                buffer
+                Buffer.from(arrayBuffer)
             );
 
-            console.log(
-                "✅ Original video downloaded:",
-                tempInput
-            );
-            console.log("🎬 INPUT FILE:", tempInput);
-
- // ======================================================
-// MEDIA TYPE ROUTING
-// ======================================================
-
-const mediaType = (post.mime || "").toLowerCase();
-
-console.log("📁 MIME TYPE:", mediaType);
-
-
-// ======================================================
-// IMAGE → JIMP
-// ======================================================
-
-if (post.mime?.startsWith('image/')) {
-
-    console.log("🖼️ IMAGE DETECTED → JIMP");
-    console.log("🖼️ Jimp input:", tempInput);
-    console.log("🖼️ Jimp output:", tempOutput);
-
-    try {
-        console.log("🖼️ Jimp: reading image...");
-
-        const image = await Jimp.read(tempInput);
-
-        console.log("🖼️ Jimp: image loaded");
-        console.log(
-            "🖼️ Dimensions:",
-            image.bitmap.width,
-            "x",
-            image.bitmap.height
-        );
-
-        const watermarkText =
-            `INFLUENSA | NODE:${idppAnonymize(cleaned)}`;
-
-        console.log("🖼️ Jimp: applying watermark...");
-
-// your watermark operations here
-
-console.log("🖼️ Jimp: writing output...");
-
-await new Promise((resolve, reject) => {
-    image.write(tempOutput, err => {
-        if (err) {
-            return reject(err);
-        }
-        resolve();
-    });
-});
-
-console.log("✅ Jimp: output written");
-
-    } catch (jimpErr) {
-
-        console.error("❌ JIMP FAILED:", jimpErr);
-
-        return res.status(500).send("IMAGE_WATERMARK_FAILED");
-    }
-}
-
-// ======================================================
-// VIDEO → FFMPEG
-// ======================================================
-
-if (mediaType.startsWith("video/")) {
-
-    console.log("🎬 VIDEO DETECTED → FFMPEG");
-
-    // YOUR EXISTING FFMPEG WATERMARK LOGIC GOES HERE
-
-}
-
-
-// ======================================================
-// AUDIO → DIRECT DELIVERY
-// ======================================================
-
-if (mediaType.startsWith("audio/")) {
-
-    console.log("🎵 AUDIO DETECTED → DIRECT DELIVERY");
-
-    const cloudFrontUrl =
-        `https://${process.env.CLOUDFRONT_DOMAIN}/${originalKey}`;
-
-    return res.redirect(302, cloudFrontUrl);
-}
-
-
-return res.status(415).send("UNSUPPORTED_MEDIA_TYPE");
             // ========================================================
-            // 8D. APPLY WATERMARK WITH FFMPEG
+            // 10B. IMAGE → JIMP
             // ========================================================
-        
-await new Promise((resolve, reject) => {
 
-    const watermarkText =
-        `INFLUENSA | NODE-${idppAnonymize(cleaned)}`;
+            if (mime.startsWith("image/")) {
 
-    console.log("🎬 Starting FFmpeg watermark...");
-    console.log("🎬 Input:", tempInput);
-    console.log("🎬 Output:", tempOutput);
+                console.log(
+                    "🖼️ JIMP PROCESSING",
+                    {
+                        postId,
+                        mime
+                    }
+                );
 
-    ffmpeg(tempInput)
+                try {
 
-        // Explicitly normalize the decoded video before drawtext.
-        // This allows FFmpeg to initialize the filter graph with
-        // a predictable pixel format while keeping the ORIGINAL
-        // video dimensions dynamic.
-        .videoFilters([
-            {
-                filter: 'format',
-                options: 'yuv420p'
-            },
-            {
-                filter: 'drawtext',
-                options: {
-                    text: watermarkText,
-                    fontfile: '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+                    /*
+                     * Jimp v1.x
+                     *
+                     * Requires:
+                     *
+                     * const {
+                     *     Jimp,
+                     *     loadFont,
+                     *     SANS_32_WHITE
+                     * } = require("jimp");
+                     */
 
-                    // Keep this fixed; it does NOT fix the video resolution.
-                    fontsize: 20,
+                    const {
+                        Jimp,
+                        loadFont,
+                        SANS_32_WHITE
+                    } = require("jimp");
 
-                    fontcolor: 'white@0.45',
+                    const image =
+                        await Jimp.read(
+                            tempInput
+                        );
 
-                    // These remain completely dynamic.
-                    x: 'w-tw-20',
-                    y: 'h-th-20',
+                    const width =
+                        image.bitmap.width;
 
-                    box: 1,
-                    boxcolor: 'black@0.35',
-                    boxborderw: 6
+                    const height =
+                        image.bitmap.height;
+
+                    if (
+                        !width ||
+                        !height
+                    ) {
+                        throw new Error(
+                            "INVALID_IMAGE_DIMENSIONS"
+                        );
+                    }
+
+                    // ------------------------------------------------
+                    // LOAD JIMP FONT
+                    // ------------------------------------------------
+
+                    const font =
+                        await loadFont(
+                            SANS_32_WHITE
+                        );
+
+                    // ------------------------------------------------
+                    // BUYER WATERMARK
+                    //
+                    // We deliberately expose only a masked identifier.
+                    // ------------------------------------------------
+
+                    const nodeId =
+                        idppAnonymize(
+                            cleaned
+                        );
+
+                    const watermarkText =
+                        `INFLUENSA | NODE-${nodeId}`;
+
+                    // ------------------------------------------------
+                    // SCALE WATERMARK RELATIVE TO IMAGE
+                    // ------------------------------------------------
+
+                    let fontSizeFactor = 1;
+
+                    if (width < 800) {
+                        fontSizeFactor = 0.65;
+
+                    } else if (width < 1400) {
+                        fontSizeFactor = 0.85;
+
+                    } else if (width >= 2200) {
+                        fontSizeFactor = 1.25;
+                    }
+
+                    /*
+                     * Jimp bitmap fonts have fixed glyph sizes,
+                     * so for maximum compatibility we use the
+                     * standard font and scale the rendered watermark
+                     * when necessary.
+                     *
+                     * The watermark is first rendered to a transparent
+                     * layer.
+                     */
+
+                    const {
+                        measureText,
+                        measureTextHeight
+                    } = require("jimp");
+
+                    const textWidth =
+                        measureText(
+                            font,
+                            watermarkText
+                        );
+
+                    const textHeight =
+                        measureTextHeight(
+                            font,
+                            watermarkText,
+                            Math.max(
+                                1,
+                                Math.floor(
+                                    width * 0.5
+                                )
+                            )
+                        );
+
+                    // ------------------------------------------------
+                    // WATERMARK PADDING
+                    // ------------------------------------------------
+
+                    const padding =
+                        Math.max(
+                            12,
+                            Math.floor(
+                                Math.min(
+                                    width,
+                                    height
+                                ) * 0.015
+                            )
+                        );
+
+                    // ------------------------------------------------
+                    // TRANSPARENT WATERMARK LAYER
+                    // ------------------------------------------------
+
+                    const overlay =
+                        new Jimp({
+                            width:
+                                textWidth +
+                                padding * 2,
+
+                            height:
+                                textHeight +
+                                padding * 2,
+
+                            color:
+                                0x00000000
+                        });
+
+                    // ------------------------------------------------
+                    // BLACK BACKGROUND BOX
+                    // ------------------------------------------------
+
+                    overlay.scan(
+                        0,
+                        0,
+                        overlay.bitmap.width,
+                        overlay.bitmap.height,
+                        function (
+                            x,
+                            y,
+                            idx
+                        ) {
+
+                            const border =
+                                Math.max(
+                                    1,
+                                    Math.floor(
+                                        padding * 0.35
+                                    )
+                                );
+
+                            if (
+                                x < border ||
+                                y < border ||
+                                x >=
+                                    overlay.bitmap.width -
+                                    border ||
+                                y >=
+                                    overlay.bitmap.height -
+                                    border
+                            ) {
+                                this.bitmap.data[
+                                    idx + 0
+                                ] = 0;
+
+                                this.bitmap.data[
+                                    idx + 1
+                                ] = 0;
+
+                                this.bitmap.data[
+                                    idx + 2
+                                ] = 0;
+
+                                this.bitmap.data[
+                                    idx + 3
+                                ] = 105;
+                            }
+                        }
+                    );
+
+                    // ------------------------------------------------
+                    // PRINT WATERMARK
+                    // ------------------------------------------------
+
+                    overlay.print({
+                        font,
+                        x: padding,
+                        y: padding,
+                        text: watermarkText
+                    });
+
+                    // ------------------------------------------------
+                    // MAKE WATERMARK SEMI-TRANSPARENT
+                    // ------------------------------------------------
+
+                    overlay.opacity(
+                        0.62
+                    );
+
+                    // ------------------------------------------------
+                    // POSITION BOTTOM RIGHT
+                    // ------------------------------------------------
+
+                    const margin =
+                        Math.max(
+                            15,
+                            Math.floor(
+                                Math.min(
+                                    width,
+                                    height
+                                ) * 0.025
+                            )
+                        );
+
+                    const watermarkX =
+                        Math.max(
+                            0,
+                            width -
+                            overlay.bitmap.width -
+                            margin
+                        );
+
+                    const watermarkY =
+                        Math.max(
+                            0,
+                            height -
+                            overlay.bitmap.height -
+                            margin
+                        );
+
+                    // ------------------------------------------------
+                    // COMPOSITE
+                    // ------------------------------------------------
+
+                    image.composite(
+                        overlay,
+                        watermarkX,
+                        watermarkY
+                    );
+
+                    // ------------------------------------------------
+                    // OPTIONAL SECOND WATERMARK
+                    //
+                    // For large images, place a subtle diagonal
+                    // identifier in the center as well.
+                    // ------------------------------------------------
+
+                    if (
+                        width >= 1600 &&
+                        height >= 1200
+                    ) {
+
+                        const centerOverlay =
+                            new Jimp({
+                                width:
+                                    textWidth +
+                                    padding * 2,
+
+                                height:
+                                    textHeight +
+                                    padding * 2,
+
+                                color:
+                                    0x00000000
+                            });
+
+                        centerOverlay.print({
+                            font,
+                            x: padding,
+                            y: padding,
+                            text:
+                                watermarkText
+                        });
+
+                        centerOverlay.opacity(
+                            0.20
+                        );
+
+                        const centerX =
+                            Math.floor(
+                                (
+                                    width -
+                                    centerOverlay
+                                        .bitmap.width
+                                ) / 2
+                            );
+
+                        const centerY =
+                            Math.floor(
+                                (
+                                    height -
+                                    centerOverlay
+                                        .bitmap.height
+                                ) / 2
+                            );
+
+                        image.composite(
+                            centerOverlay,
+                            centerX,
+                            centerY
+                        );
+                    }
+
+                    // ------------------------------------------------
+                    // WRITE FINAL IMAGE
+                    // ------------------------------------------------
+
+                    await new Promise(
+                        (resolve, reject) => {
+
+                            image.write(
+                                tempOutput,
+                                err => {
+
+                                    if (err) {
+                                        reject(err);
+                                    } else {
+                                        resolve();
+                                    }
+                                }
+                            );
+                        }
+                    );
+
+                    console.log(
+                        "✅ JIMP WATERMARK COMPLETE",
+                        {
+                            width,
+                            height,
+                            output:
+                                tempOutput
+                        }
+                    );
+
+                } catch (imageError) {
+
+                    console.error(
+                        "❌ JIMP WATERMARK FAILED",
+                        {
+                            name:
+                                imageError.name,
+                            message:
+                                imageError.message,
+                            postId
+                        }
+                    );
+
+                    return res.status(500).json({
+                        error:
+                            "IMAGE_WATERMARK_FAILED"
+                    });
                 }
             }
-        ])
 
-        // Explicit video/audio mapping and compatible output.
-        .outputOptions([
-            '-map 0:v:0',
-            '-map 0:a?',
-
-            '-c:v libx264',
-            '-preset veryfast',
-            '-crf 23',
-
-            // Force browser-compatible output.
-            '-pix_fmt yuv420p',
-
-            '-c:a aac',
-            '-b:a 128k',
-
-            '-map_metadata 0',
-
-            // Web-compatible MP4.
-            '-movflags +faststart',
-
-            // Do not force a fixed frame rate.
-            '-fps_mode vfr'
-        ])
-
-        .on('start', commandLine => {
-            console.log("🎬 FFmpeg command:");
-            console.log(commandLine);
-        })
-
-        .on('stderr', line => {
-            console.log("FFmpeg:", line);
-        })
-
-        .on('end', () => {
-            console.log("✅ FFmpeg watermark completed successfully");
-            resolve();
-        })
-
-        .on('error', err => {
-            console.error("❌ FFmpeg FAILED:", err.message);
-            reject(err);
-        })
-
-        .save(tempOutput);
-});
-
-
-// 4. Verify FFmpeg actually produced the output
-
-if (!fs.existsSync(tempOutput)) {
-    throw new Error("FFMPEG_OUTPUT_MISSING");
-}
-
-const outputStats = fs.statSync(tempOutput);
-
-if (outputStats.size <= 0) {
-    throw new Error("FFMPEG_OUTPUT_EMPTY");
-}
-
-console.log(
-    `✅ FFmpeg output verified: ${outputStats.size} bytes`
-);
-
-
-// 5. Upload watermarked version to S3
-
-const fileContent = fs.readFileSync(tempOutput);
-
-await s3.send(
-    new PutObjectCommand({
-        Bucket: process.env.AWS_S3_BUCKET_NAME,
-        Key: watermarkKey,
-        Body: fileContent,
-        ContentType: 'video/mp4'
-    })
-);
-
-console.log(
-    `✅ Watermarked version uploaded: ${watermarkKey}`
-);
-
-
-// 6. NOW clean up temporary files
-
-try {
-    if (fs.existsSync(tempInput)) {
-        fs.unlinkSync(tempInput);
-        console.log("🧹 Removed:", tempInput);
-    }
-} catch (e) {
-    console.warn(
-        "⚠️ Could not remove temp input:",
-        e.message
-    );
-}
-
-try {
-    if (fs.existsSync(tempOutput)) {
-        fs.unlinkSync(tempOutput);
-        console.log("🧹 Removed:", tempOutput);
-    }
-} catch (e) {
-    console.warn(
-        "⚠️ Could not remove temp output:",
-        e.message
-    );
-}
             // ========================================================
-            // 8E. VERIFY OUTPUT EXISTS
+            // 10C. VIDEO → FFMPEG
             // ========================================================
-            if (!fs.existsSync(tempOutput)) {
 
-                console.error(
-                    "❌ FFmpeg output file was not created"
-                );
+            else if (mime.startsWith("video/")) {
 
-                return res.status(500).send(
-                    "WATERMARK_OUTPUT_MISSING"
+                const watermarkText =
+                    `INFLUENSA | NODE-${idppAnonymize(cleaned)}`;
+
+                await new Promise(
+                    (resolve, reject) => {
+
+                        ffmpeg(tempInput)
+
+                            .videoFilters([
+                                {
+                                    filter:
+                                        "format",
+
+                                    options:
+                                        "yuv420p"
+                                },
+                                {
+                                    filter:
+                                        "drawtext",
+
+                                    options: {
+
+                                        text:
+                                            watermarkText,
+
+                                        fontfile:
+                                            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+
+                                        fontsize:
+                                            20,
+
+                                        fontcolor:
+                                            "white@0.45",
+
+                                        x:
+                                            "w-tw-20",
+
+                                        y:
+                                            "h-th-20",
+
+                                        box:
+                                            1,
+
+                                        boxcolor:
+                                            "black@0.35",
+
+                                        boxborderw:
+                                            6
+                                    }
+                                }
+                            ])
+
+                            .outputOptions([
+
+                                "-map 0:v:0",
+
+                                "-map 0:a?",
+
+                                "-c:v libx264",
+
+                                "-preset veryfast",
+
+                                "-crf 23",
+
+                                "-pix_fmt yuv420p",
+
+                                "-c:a aac",
+
+                                "-b:a 128k",
+
+                                "-map_metadata 0",
+
+                                "-movflags +faststart",
+
+                                "-fps_mode vfr"
+                            ])
+
+                            .on(
+                                "start",
+                                commandLine => {
+
+                                    console.log(
+                                        "🎬 FFmpeg started"
+                                    );
+
+                                    console.log(
+                                        commandLine
+                                    );
+                                }
+                            )
+
+                            .on(
+                                "stderr",
+                                line => {
+
+                                    console.log(
+                                        "FFmpeg:",
+                                        line
+                                    );
+                                }
+                            )
+
+                            .on(
+                                "end",
+                                () => {
+
+                                    console.log(
+                                        "✅ FFmpeg completed"
+                                    );
+
+                                    resolve();
+                                }
+                            )
+
+                            .on(
+                                "error",
+                                err => {
+
+                                    console.error(
+                                        "❌ FFmpeg FAILED",
+                                        err.message
+                                    );
+
+                                    reject(err);
+                                }
+                            )
+
+                            .save(
+                                tempOutput
+                            );
+                    }
                 );
             }
 
             // ========================================================
-            // 8F. UPLOAD WATERMARKED VIDEO TO S3
+            // 10D. AUDIO
             // ========================================================
-           
+
+            else if (mime.startsWith("audio/")) {
+
+                /*
+                 * Audio does not need local processing.
+                 *
+                 * Authorization has already been completed above.
+                 */
+
+                const audioCommand =
+                    new GetObjectCommand({
+                        Bucket:
+                            process.env.AWS_S3_BUCKET_NAME,
+
+                        Key:
+                            originalKey,
+
+                        ResponseContentType:
+                            mime
+                    });
+
+                const audioUrl =
+                    await getSignedUrl(
+                        s3,
+                        audioCommand,
+                        {
+                            expiresIn: 300
+                        }
+                    );
+
+                return res.redirect(
+                    302,
+                    audioUrl
+                );
+            }
+
+            // ========================================================
+            // 11. VERIFY GENERATED FILE
+            // ========================================================
+
+            if (
+                !tempOutput ||
+                !fs.existsSync(tempOutput)
+            ) {
+
+                console.error(
+                    "❌ WATERMARK_OUTPUT_MISSING",
+                    {
+                        postId
+                    }
+                );
+
+                return res.status(500).json({
+                    error:
+                        "WATERMARK_OUTPUT_MISSING"
+                });
+            }
+
+            const outputStats =
+                fs.statSync(
+                    tempOutput
+                );
+
+            if (
+                !outputStats.isFile() ||
+                outputStats.size <= 0
+            ) {
+
+                console.error(
+                    "❌ WATERMARK_OUTPUT_EMPTY",
+                    {
+                        postId
+                    }
+                );
+
+                return res.status(500).json({
+                    error:
+                        "WATERMARK_OUTPUT_EMPTY"
+                });
+            }
+
+            // ========================================================
+            // 12. DETERMINE OUTPUT CONTENT TYPE
+            // ========================================================
+
+            const outputContentType =
+                mime.startsWith("video/")
+                    ? "video/mp4"
+                    : mime;
+
+            // ========================================================
+            // 13. UPLOAD PROTECTED COPY
+            // ========================================================
+
+            const processedBuffer =
+                fs.readFileSync(
+                    tempOutput
+                );
 
             await s3.send(
                 new PutObjectCommand({
+
                     Bucket:
                         process.env.AWS_S3_BUCKET_NAME,
 
@@ -6047,21 +6525,37 @@ try {
                         watermarkKey,
 
                     Body:
-                        fileContent,
+                        processedBuffer,
 
                     ContentType:
-                        "video/mp4"
+                        outputContentType,
+
+                    CacheControl:
+                        "private, no-store",
+
+                    Metadata: {
+
+                        postid:
+                            post._id.toString(),
+
+                        recipient:
+                            cleaned.slice(-4),
+
+                        protected:
+                            "true",
+
+                        transaction:
+                            completedPurchase
+                                ?.transactionID ||
+                            "owner_or_license"
+                    }
                 })
             );
 
-            console.log(
-                "✅ Watermarked video uploaded:",
-                watermarkKey
-            );
+            // ========================================================
+            // 14. VERIFY UPLOAD
+            // ========================================================
 
-            // ========================================================
-            // 8G. VERIFY WATERMARKED OBJECT
-            // ========================================================
             await s3.send(
                 new HeadObjectCommand({
                     Bucket:
@@ -6073,79 +6567,175 @@ try {
             );
 
             console.log(
-                "✅ Verified watermarked object:",
-                watermarkKey
+                "✅ PROTECTED MEDIA CREATED",
+                {
+                    postId,
+                    watermarkKey
+                }
             );
         }
 
         // ============================================================
-        // 9. CLEAN TEMPORARY FILES
+        // 15. CLEAN TEMPORARY FILES
         // ============================================================
-        if (tempInput && fs.existsSync(tempInput)) {
-            fs.unlinkSync(tempInput);
-        }
 
-        if (tempOutput && fs.existsSync(tempOutput)) {
-            fs.unlinkSync(tempOutput);
-        }
+        const cleanup = () => {
+
+            try {
+
+                if (
+                    tempInput &&
+                    fs.existsSync(tempInput)
+                ) {
+                    fs.unlinkSync(
+                        tempInput
+                    );
+                }
+
+            } catch (err) {
+
+                console.warn(
+                    "⚠️ Input cleanup failed:",
+                    err.message
+                );
+            }
+
+            try {
+
+                if (
+                    tempOutput &&
+                    fs.existsSync(tempOutput)
+                ) {
+                    fs.unlinkSync(
+                        tempOutput
+                    );
+                }
+
+            } catch (err) {
+
+                console.warn(
+                    "⚠️ Output cleanup failed:",
+                    err.message
+                );
+            }
+        };
+
+        cleanup();
+
+        tempInput = null;
+        tempOutput = null;
 
         // ============================================================
-        // 10. CLOUDFRONT REDIRECT
+        // 16. FINAL AUTHORIZED DELIVERY
+        //
+        // NEVER expose the S3 object directly.
+        //
+        // The original bucket should remain private.
+        // The protected copy is delivered through a short-lived
+        // presigned URL.
         // ============================================================
-        const cloudFrontDomain =
-            process.env.CLOUDFRONT_DOMAIN;
 
-        if (!cloudFrontDomain) {
-            console.error(
-                "❌ CLOUDFRONT_DOMAIN is not configured"
+        const finalCommand =
+            new GetObjectCommand({
+
+                Bucket:
+                    process.env.AWS_S3_BUCKET_NAME,
+
+                Key:
+                    watermarkKey,
+
+                ResponseContentType:
+                    mime.startsWith("video/")
+                        ? "video/mp4"
+                        : mime
+            });
+
+        const finalUrl =
+            await getSignedUrl(
+                s3,
+                finalCommand,
+                {
+                    expiresIn: 300
+                }
             );
-
-            return res.status(500).send(
-                "CLOUDFRONT_NOT_CONFIGURED"
-            );
-        }
-
-        const cloudFrontUrl =
-            `https://${cloudFrontDomain}/${finalKey}`;
 
         console.log(
-            "🌐 Redirecting to:",
-            cloudFrontUrl
+            "🎬 AUTHORIZED MEDIA DELIVERY",
+            {
+                postId,
+                type: mime,
+                expiresIn: 300
+            }
         );
 
         return res.redirect(
             302,
-            cloudFrontUrl
+            finalUrl
         );
 
     } catch (err) {
 
         console.error(
-            "❌ MEDIA ROUTE ERROR:",
-            err
+            "❌ MEDIA ROUTE ERROR",
+            {
+                name:
+                    err.name,
+
+                message:
+                    err.message,
+
+                postId:
+                    req.params.postId
+            }
         );
 
+        return res.status(500).json({
+            error: "MEDIA_ERROR"
+        });
+
+    } finally {
+
         // ============================================================
-        // CLEAN TEMP FILES EVEN AFTER AN ERROR
+        // ABSOLUTE TEMP FILE CLEANUP
         // ============================================================
+
         try {
-            if (tempInput && fs.existsSync(tempInput)) {
-                fs.unlinkSync(tempInput);
+
+            if (
+                tempInput &&
+                fs.existsSync(tempInput)
+            ) {
+                fs.unlinkSync(
+                    tempInput
+                );
             }
 
-            if (tempOutput && fs.existsSync(tempOutput)) {
-                fs.unlinkSync(tempOutput);
-            }
-        } catch (cleanupError) {
-            console.error(
-                "⚠️ Temp file cleanup failed:",
-                cleanupError
+        } catch (err) {
+
+            console.warn(
+                "⚠️ Final input cleanup failed:",
+                err.message
             );
         }
 
-        return res.status(500).send(
-            "MEDIA_ERROR"
-        );
+        try {
+
+            if (
+                tempOutput &&
+                fs.existsSync(tempOutput)
+            ) {
+                fs.unlinkSync(
+                    tempOutput
+                );
+            }
+
+        } catch (err) {
+
+            console.warn(
+                "⚠️ Final output cleanup failed:",
+                err.message
+            );
+        }
     }
 });
 app.get('/api/governance/sidebar', async (req, res) => {
