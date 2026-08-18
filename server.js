@@ -3454,7 +3454,35 @@ function calculateCreatorSplit(amount) {
         creatorAmount
     };
 }
+app.get('/api/stk-status/:checkoutID', async (req, res) => {
+    const { checkoutID } = req.params;
 
+    console.log("🔎 STK STATUS CHECK:", checkoutID);
+
+    try {
+        const transaction = await Transaction.findOne({ checkoutID });
+
+        if (!transaction) {
+            return res.status(404).json({
+                status: "not_found",
+                checkoutID
+            });
+        }
+
+        return res.json({
+            status: transaction.status,
+            checkoutID: transaction.checkoutID
+        });
+
+    } catch (err) {
+        console.error("❌ STK STATUS ERROR:", err);
+
+        return res.status(500).json({
+            status: "error",
+            error: err.message
+        });
+    }
+});
 async function settleSuccessfulContentPurchase({
     transactionId,
     postId,
