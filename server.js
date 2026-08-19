@@ -3263,23 +3263,32 @@ app.post('/api/mpesa/stk/callback', async (req, res) => {
             return;
         }
 
-        // =====================================================
-        // SAVE M-PESA RECEIPT
-        // =====================================================
+// =====================================================
+// SAVE M-PESA RECEIPT + COMPLETE TRANSACTION
+// =====================================================
 
-        transaction.transactionID =
-            mpesaReceiptNumber;
+transaction.status = "completed";
 
-        transaction.resultCode =
-            resultCode;
+transaction.transactionID =
+    mpesaReceiptNumber;
 
-        transaction.resultDesc =
-            resultDesc;
+transaction.resultCode =
+    resultCode;
 
-        transaction.userPhone =
-            cleanPhone(phone);
+transaction.resultDesc =
+    resultDesc;
 
-        await transaction.save();
+transaction.userPhone =
+    cleanPhone(phone);
+
+transaction.completedAt =
+    new Date();
+
+await transaction.save();
+
+console.log(
+    `✅ TRANSACTION COMPLETED | ${checkoutID} | Receipt: ${mpesaReceiptNumber}`
+);
 
         // =====================================================
         // SETTLE CREATOR 92% / PLATFORM 8%
