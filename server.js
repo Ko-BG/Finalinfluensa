@@ -3106,6 +3106,7 @@ app.post('/api/posts/:id/unlock', async (req, res) => {
 });
 app.post('/api/mpesa/stk/callback', async (req, res) => {
     try {
+
         const callback =
             req.body?.Body?.stkCallback;
 
@@ -3114,7 +3115,10 @@ app.post('/api/mpesa/stk/callback', async (req, res) => {
             JSON.stringify(callback, null, 2)
         );
 
-        // Acknowledge Safaricom immediately
+        // =====================================================
+        // ACKNOWLEDGE SAFARICOM IMMEDIATELY
+        // =====================================================
+
         res.status(200).json({
             ResultCode: 0,
             ResultDesc: "Accepted"
@@ -3124,6 +3128,10 @@ app.post('/api/mpesa/stk/callback', async (req, res) => {
             console.error("❌ EMPTY STK CALLBACK");
             return;
         }
+
+        // =====================================================
+        // BASIC CALLBACK DATA
+        // =====================================================
 
         const checkoutID =
             callback.CheckoutRequestID;
@@ -3141,8 +3149,12 @@ app.post('/api/mpesa/stk/callback', async (req, res) => {
             return;
         }
 
+        console.log(
+            `🔎 Processing STK callback: ${checkoutID}`
+        );
+
         // =====================================================
-        // FIND OUR PENDING TRANSACTION
+        // FIND OUR TRANSACTION
         // =====================================================
 
         const transaction =
@@ -3163,10 +3175,12 @@ app.post('/api/mpesa/stk/callback', async (req, res) => {
         // =====================================================
 
         if (transaction.status === "completed") {
+
             console.log(
                 "ℹ️ STK ALREADY COMPLETED:",
                 checkoutID
             );
+
             return;
         }
 
@@ -3176,7 +3190,8 @@ app.post('/api/mpesa/stk/callback', async (req, res) => {
 
         if (resultCode !== 0) {
 
-            transaction.status = "failed";
+            transaction.status =
+                "failed";
 
             transaction.resultCode =
                 resultCode;
@@ -3204,13 +3219,17 @@ app.post('/api/mpesa/stk/callback', async (req, res) => {
             callback.CallbackMetadata?.Item || [];
 
         const getMetadata = (name) => {
+
             return metadata.find(
                 item => item.Name === name
             )?.Value;
+
         };
 
         const mpesaReceiptNumber =
-            getMetadata("MpesaReceiptNumber");
+            getMetadata(
+                "MpesaReceiptNumber"
+            );
 
         const amount =
             Number(
@@ -3237,9 +3256,11 @@ app.post('/api/mpesa/stk/callback', async (req, res) => {
             ) > 0.01
         ) {
 
-            transaction.status = "failed";
+            transaction.status =
+                "failed";
 
-            transaction.resultCode = -1;
+            transaction.resultCode =
+                -1;
 
             transaction.resultDesc =
                 "PAYMENT_AMOUNT_MISMATCH";
@@ -3254,8 +3275,10 @@ app.post('/api/mpesa/stk/callback', async (req, res) => {
                 {
                     expected:
                         transaction.amountPaid,
+
                     received:
                         amount,
+
                     checkoutID
                 }
             );
@@ -3263,62 +3286,107 @@ app.post('/api/mpesa/stk/callback', async (req, res) => {
             return;
         }
 
-// =====================================================
-// SAVE M-PESA RECEIPT / PAYMENT DETAILS
-// Settlement will mark the transaction completed
-// =====================================================
+        // =====================================================
+        // SAVE M-PESA PAYMENT DETAILS
+        //
+        // IMPORTANT:
+        // DO NOT MARK TRANSACTION COMPLETED HERE.
+        //
+        // settleSuccessfulContentPurchase() will:
+        // - grant buyer access
+        // - calculate 92% / 8%
+        // - credit creator
+        // - create ledger
+        // - mark transaction completed
+        // =====================================================
 
-transaction.transactionID =
-    mpesaReceiptNumber;
+        transaction.transactionID =
+            mpesaReceiptNumber;
 
-transaction.resultCode =
-    resultCode;
+        transaction.resultCode =
+            resultCode;
 
-transaction.resultDesc =
-    resultDesc;
+        transaction.resultDesc =
+            resultDesc;
 
-transaction.userPhone =
-    cleanPhone(phone);
+        transaction.userPhone =
+            cleanPhone(phone);
 
-await transaction.save();
+        await transaction.save();
 
-console.log(
-    `✅ STK PAYMENT VERIFIED | ${checkoutID} | Receipt: ${mpesaReceiptNumber}`
-);
+        console.log(
+            `✅ STK PAYMENT VERIFIED | ${checkoutID} | Receipt: ${mpesaReceiptNumber}`
+        );
 
-// =====================================================
-// SETTLE CREATOR 92% / PLATFORM 8%
-// Settlement also grants buyer access
-// =====================================================
+        // =====================================================
+        // SETTLE SUCCESSFUL PURCHASE
+        // =====================================================
 
-const settlement =
-    await settleSuccessfulContentPurchase({
-        transactionId:
-            mpesaReceiptNumber,
+        const settlement =
+            await settleSuccessfulContentPurchase({
 
-        postId:
-            transaction.postID,
+                transactionId:
+                    mpesaReceiptNumber,
 
-        payerPhone:
-            cleanPhone(phone),
+                postId:
+                    transaction.postID,
 
-        amount,
+                payerPhone:
+                    cleanPhone(phone),
 
-        receiptNumber:
-            mpesaReceiptNumber
-    });
+                amount,
 
-console.log(
-    "💰 STK SETTLEMENT COMPLETE:",
-    JSON.stringify(
-        settlement,
-        null,
-        2
-    )
-);
-}
+                receiptNumber:
+                    mpesaReceiptNumber
+
+            });
+
+        console.log(
+            "💰 STK SETTLEMENT COMPLETE:",
+            JSON.stringify(
+                settlement,
+                null,
+                2
+            )
+        );
+
+        // =====================================================
+        // FINAL SUCCESS LOG
+        // =====================================================
+
+        if (
+            settlement &&
+            settlement.accessGranted === true
+        ) {
+
+            console.log(
+                `🔓 BUYER ACCESS GRANTED | Post: ${transaction.postID} | Phone: ${cleanPhone(phone)}`
+            );
+
+            console.log(
+                `💰 CREATOR AMOUNT: KES ${settlement.creatorAmount}`
+            );
+
+            console.log(
+                `🏦 PLATFORM FEE: KES ${settlement.platformFee}`
+            );
+
+        } else {
+
+            console.warn(
+                "⚠️ PAYMENT COMPLETED BUT ACCESS WAS NOT CONFIRMED",
+                settlement
+            );
+        }
+
+    } catch (err) {
+
+        console.error(
+            "❌ STK CALLBACK ERROR:",
+            err
+        );
+    }
 });
-
 async function creditCreatorSale({
     creatorId,
     grossAmount,
