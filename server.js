@@ -3264,10 +3264,9 @@ app.post('/api/mpesa/stk/callback', async (req, res) => {
         }
 
 // =====================================================
-// SAVE M-PESA RECEIPT + COMPLETE TRANSACTION
+// SAVE M-PESA RECEIPT / PAYMENT DETAILS
+// Settlement will mark the transaction completed
 // =====================================================
-
-transaction.status = "completed";
 
 transaction.transactionID =
     mpesaReceiptNumber;
@@ -3281,52 +3280,43 @@ transaction.resultDesc =
 transaction.userPhone =
     cleanPhone(phone);
 
-transaction.completedAt =
-    new Date();
-
 await transaction.save();
 
 console.log(
-    `✅ TRANSACTION COMPLETED | ${checkoutID} | Receipt: ${mpesaReceiptNumber}`
+    `✅ STK PAYMENT VERIFIED | ${checkoutID} | Receipt: ${mpesaReceiptNumber}`
 );
 
-        // =====================================================
-        // SETTLE CREATOR 92% / PLATFORM 8%
-        // =====================================================
+// =====================================================
+// SETTLE CREATOR 92% / PLATFORM 8%
+// Settlement also grants buyer access
+// =====================================================
 
-        const settlement =
-            await settleSuccessfulContentPurchase({
-                transactionId:
-                    mpesaReceiptNumber,
+const settlement =
+    await settleSuccessfulContentPurchase({
+        transactionId:
+            mpesaReceiptNumber,
 
-                postId:
-                    transaction.postID,
+        postId:
+            transaction.postID,
 
-                payerPhone:
-                    cleanPhone(phone),
+        payerPhone:
+            cleanPhone(phone),
 
-                amount,
+        amount,
 
-                receiptNumber:
-                    mpesaReceiptNumber
-            });
+        receiptNumber:
+            mpesaReceiptNumber
+    });
 
-        console.log(
-            "💰 STK SETTLEMENT COMPLETE:",
-            JSON.stringify(
-                settlement,
-                null,
-                2
-            )
-        );
-
-    } catch (err) {
-
-        console.error(
-            "❌ STK CALLBACK ERROR:",
-            err
-        );
-    }
+console.log(
+    "💰 STK SETTLEMENT COMPLETE:",
+    JSON.stringify(
+        settlement,
+        null,
+        2
+    )
+);
+}
 });
 
 async function creditCreatorSale({
