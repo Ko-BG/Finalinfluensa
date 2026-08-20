@@ -1304,14 +1304,22 @@ function renderFullMedia(p) {
 }
 function handleMediaError(element, postId) {
     console.error(
-        `❌ Media failed to load for post: ${postId}`
+        "❌ MEDIA LOAD ERROR",
+        {
+            postId,
+            src: element?.src,
+            networkState: element?.networkState,
+            readyState: element?.readyState,
+            errorCode: element?.error?.code,
+            errorMessage: element?.error?.message
+        }
     );
 
     showToast(
-        "⚠️ Video processing failed. You are still unlocked. Please try again."
+        "⚠️ Media could not be displayed. You are still unlocked. Please try again."
     );
 
-    // Do NOT call unlockIP() here.
+    // Do NOT call unlockIP().
     // The user has already paid.
 }
 /**
