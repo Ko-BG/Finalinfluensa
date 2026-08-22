@@ -5638,119 +5638,99 @@ app.get('/api/media/:postId', async (req, res) => {
             });
         }
 
-        // ============================================================
-        // 3. DETERMINE OWNER / LICENSE ACCESS
-        // ============================================================
+// ============================================================
+// 3. DETERMINE OWNER / LICENSE ACCESS
+// ============================================================
 
-        const ownerIdentity =
-            cleanPhone(post.owner || "");
+const ownerIdentity =
+    cleanPhone(post.owner || "");
 
-        const isOwner =
-            ownerIdentity === cleaned;
+const isOwner =
+    ownerIdentity === cleaned;
 
-        const isLicensed =
-            Array.isArray(post.licensed_to) &&
-            post.licensed_to.some(
-                identity =>
-                    cleanPhone(identity) === cleaned
-            );
+const isLicensed =
+    Array.isArray(post.licensed_to) &&
+    post.licensed_to.some(
+        identity =>
+            cleanPhone(identity) === cleaned
+    );
 
-        // ============================================================
-        // 4. VERIFY BUYER PURCHASE
-        //
-        // IMPORTANT:
-        //
-        // unlocked_by alone is NOT sufficient for an ordinary buyer.
-        //
-        // We require:
-        //
-        //   1. The phone exists in unlocked_by
-        //   2. A matching transaction exists
-        //   3. Transaction status = completed
-        //   4. Transaction belongs to this post
-        //   5. Transaction belongs to this phone
-        //
-        // This means the media route does not create authorization.
-        // The payment/settlement system must create it first.
-        // ============================================================
+// ============================================================
+// DEBUG MEDIA AUTHORIZATION
+// ============================================================
 
-        let completedPurchase = null;
+const normalizedUnlockedBy =
+    Array.isArray(post.unlocked_by)
+        ? post.unlocked_by.map(identity =>
+            cleanPhone(identity)
+        )
+        : [];
 
-        if (!isOwner && !isLicensed) {
+const unlockedMatch =
+    normalizedUnlockedBy.includes(cleaned);
 
-            const unlocked =
-                Array.isArray(post.unlocked_by) &&
-                post.unlocked_by.some(
-                    identity =>
-                        cleanPhone(identity) === cleaned
-                );
+console.log("🔎 MEDIA AUTH DEBUG", {
+    postId,
 
-            if (!unlocked) {
+    suppliedPhone:
+        phone,
 
-                console.warn(
-                    "🔒 MEDIA ACCESS DENIED — NOT UNLOCKED",
-                    {
-                        postId,
-                        phoneSuffix: cleaned.slice(-4)
-                    }
-                );
+    cleanedPhone:
+        cleaned,
 
-                return res.status(403).json({
-                    error: "LOCKED"
-                });
-            }
+    owner:
+        post.owner,
 
-            completedPurchase =
-                await Transaction.findOne({
+    ownerIdentity,
 
-                    postID: post._id,
+    isOwner,
 
-                    userPhone: cleaned,
+    licensedTo:
+        post.licensed_to,
 
-                    status: "completed",
+    isLicensed,
 
-                    type: {
-                        $in: [
-                            "unlock",
-                            "content_purchase"
-                        ]
-                    }
+    unlockedBy:
+        post.unlocked_by,
 
-                })
-                .select(
-                    "_id transactionID amountPaid completedAt"
-                )
-                .sort({
-                    completedAt: -1
-                })
-                .lean();
+    normalizedUnlockedBy,
 
-            if (!completedPurchase) {
+    unlockedMatch
+});
 
-                console.warn(
-                    "🔒 MEDIA ACCESS DENIED — NO COMPLETED PURCHASE",
-                    {
-                        postId,
-                        phoneSuffix: cleaned.slice(-4)
-                    }
-                );
+// ============================================================
+// 4. VERIFY BUYER PURCHASE
+// ============================================================
 
-                return res.status(403).json({
-                    error: "PAYMENT_NOT_CONFIRMED"
-                });
-            }
-        }
+let completedPurchase = null;
 
-        console.log(
-            "🔓 MEDIA ACCESS AUTHORIZED",
+if (!isOwner && !isLicensed) {
+
+    const unlocked =
+        unlockedMatch;
+
+    if (!unlocked) {
+
+        console.warn(
+            "🔒 MEDIA ACCESS DENIED — NOT UNLOCKED",
             {
                 postId,
-                owner: isOwner,
-                licensed: isLicensed,
-                purchased: !!completedPurchase,
-                phoneSuffix: cleaned.slice(-4)
+                phoneSuffix:
+                    cleaned.slice(-4),
+
+                cleanedPhone:
+                    cleaned,
+
+                normalizedUnlockedBy
             }
         );
+
+        return res.status(403).json({
+            error: "LOCKED"
+        });
+    }
+
+    
 
         // ============================================================
         // 5. VERIFY ORIGINAL FILE KEY
