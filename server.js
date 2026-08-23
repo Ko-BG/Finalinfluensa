@@ -3683,29 +3683,7 @@ if (!transaction) {
             await creator.save({
                 session
             });
-// =====================================================
-// 9. CREDIT CREATOR 92%
-// =====================================================
 
-const balanceBefore =
-    Number(
-        creator.earnings || 0
-    );
-
-const balanceAfter =
-    Number(
-        (
-            balanceBefore +
-            split.creatorAmount
-        ).toFixed(2)
-    );
-
-creator.earnings =
-    balanceAfter;
-
-await creator.save({
-    session
-});
 
 // =====================================================
 // 9B. CREDIT PLATFORM 8% FEE TO PROTOCOL VAULT
@@ -3736,64 +3714,8 @@ console.log(
     }
 );
 
-// =====================================================
-// 9C. CREATE IMMUTABLE CREATOR LEDGER
-// =====================================================
 
-const creatorReference =
-    `SALE-${transactionId}`;
-
-await WalletLedger.create(
-    [{
-        userId: creator._id,
-
-        type: "CONTENT_SALE",
-
-        direction: "CREDIT",
-
-        amount:
-            split.creatorAmount,
-
-        currency: "KES",
-
-        balanceBefore,
-
-        balanceAfter,
-
-        reference:
-            creatorReference,
-
-        metadata: {
-            transactionId,
-
-            postId:
-                post._id.toString(),
-
-            payerPhone:
-                buyerIdentity,
-
-            grossAmount:
-                split.gross,
-
-            platformFee:
-                split.platformFee,
-
-            creatorAmount:
-                split.creatorAmount,
-
-            platformShare:
-                0.08,
-
-            creatorShare:
-                0.92,
-
-            receiptNumber
-        }
-    }],
-    {
-        session
-    }
-);
+            
             // =====================================================
             // 10. CREATE IMMUTABLE CREATOR LEDGER
             // =====================================================
