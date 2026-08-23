@@ -3323,32 +3323,23 @@ app.post('/api/mpesa/stk/callback', async (req, res) => {
         // =====================================================
 
         const settlement =
-            await settleSuccessfulContentPurchase({
+    await settleSuccessfulContentPurchase({
 
-                transactionId:
-                    mpesaReceiptNumber,
+        transactionId:
+            transaction._id,
 
-                postId:
-                    transaction.postID,
+        postId:
+            transaction.postID,
 
-                payerPhone:
-                    cleanPhone(phone),
+        payerPhone:
+            cleanPhone(phone),
 
-                amount,
+        amount,
 
-                receiptNumber:
-                    mpesaReceiptNumber
+        receiptNumber:
+            mpesaReceiptNumber
 
-            });
-
-        console.log(
-            "💰 STK SETTLEMENT COMPLETE:",
-            JSON.stringify(
-                settlement,
-                null,
-                2
-            )
-        );
+    });
 
         // =====================================================
         // FINAL SUCCESS LOG
@@ -3568,14 +3559,12 @@ async function settleSuccessfulContentPurchase({
             // 1. FIND TRANSACTION
             // =====================================================
 
-            const transaction = await Transaction.findOne({
-                transactionID: transactionId
-            }).session(session);
+            const transaction = await Transaction.findById(transactionId)
+    .session(session);
 
-            if (!transaction) {
-                throw new Error("TRANSACTION_NOT_FOUND");
-            }
-
+if (!transaction) {
+    throw new Error("TRANSACTION_NOT_FOUND");
+}
             // =====================================================
             // 2. IDEMPOTENCY
             // =====================================================
