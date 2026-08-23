@@ -1158,7 +1158,107 @@ async function fetchPosts() {
         render(allPosts);
     } catch (e) { SystemLog("Feed Sync Error", "error"); }
 }
+function renderTeaserMedia(p, isAudio) {
+    if (isAudio) return `<div class="flex items-end gap-1 h-12"><div class="audio-bar"></div><div class="audio-bar" style="animation-delay:0.2s"></div><div class="audio-bar" style="animation-delay:0.4s"></div></div>`;
+    return `<div class="stamped-bg w-full h-full opacity-10 flex items-center justify-center text-[10px] font-bold">ENCRYPTED_DATA</div>`;
+}
 
+/* MODIFIED: Secure Watermarked Rendering Logic */
+function renderFullMedia(p) {
+    if (p.is_stream) {
+        return `
+            <iframe
+                src="${p.stream_url}"
+                class="w-full h-full"
+                allow="autoplay; encrypted-media">
+            </iframe>
+        `;
+    }
+
+    if (p.mime?.includes('video')) {
+        return `
+            <video
+                id="video-${p._id}"
+                controls
+                controlsList="nodownload"
+                playsinline
+                preload="metadata"
+                class="w-full h-full object-cover"
+                onerror="handleMediaError(this, '${p._id}')">
+            </video>
+        `;
+    }
+
+    if (p.mime?.includes('audio')) {
+        return `
+            <div class="flex flex-col items-center justify-center h-full w-full bg-slate-900/50 p-4">
+                <div class="flex gap-1 mb-4">
+                    <div class="audio-bar"></div>
+                    <div class="audio-bar"></div>
+                    <div class="audio-bar"></div>
+                </div>
+                <audio
+                    id="audio-${p._id}"
+                    controls
+                    controlsList="nodownload"
+                    preload="metadata"
+                    class="w-full"
+                    onerror="handleMediaError(this, '${p._id}')">
+                </audio>
+            </div>
+        `;
+    }
+
+    // Image
+    return `
+        <img
+            id="img-${p._id}"
+            class="w-full h-full object-cover"
+            onerror="handleMediaError(this, '${p._id}')"
+        >
+    `;
+}
+
+async function loadSecureMedia(postId, mime) {
+    const phone = clientCleanPhone(currentUser?.identity);
+    if (!phone) return;
+
+    try {
+        const response = await fetch(
+            `${API_URL}/api/media/${postId}?phone=${encodeURIComponent(phone)}&format=json`
+        );
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success || !data.url) {
+            console.warn("Media locked or failed:", postId);
+            return;
+        }
+
+        if (mime?.includes('video')) {
+            const video = document.getElementById(`video-${postId}`);
+            if (video) {
+                video.src = data.url;
+                video.load();
+            }
+        } 
+        else if (mime?.includes('audio')) {
+            const audio = document.getElementById(`audio-${postId}`);
+            if (audio) {
+                audio.src = data.url;
+            }
+        } 
+        else {
+            const img = document.getElementById(`img-${postId}`);
+            if (img) {
+                img.src = data.url;
+            }
+        }
+
+    } catch (err) {
+        console.error("Failed to load secure media:", postId, err);
+    }
+}
 function render(posts) {
   const container = document.getElementById("feedContainer");
   if (!container) return;
@@ -1236,72 +1336,21 @@ function render(posts) {
         </div>
       </div>`;
   }).join('');
+
+// After container.innerHTML = posts.map(...)
+
+posts.forEach(p => {
+    const isOwner = clientCleanPhone(p.owner) === activeUserNode;
+    const unlockedArray = p.unlocked_by || [];
+    const isUnlocked = unlockedArray.map(n => clientCleanPhone(n)).includes(activeUserNode) || isOwner;
+    const isLicensed = (p.licensed_to || []).map(n => clientCleanPhone(n)).includes(activeUserNode);
+
+    if (isUnlocked || isLicensed) {
+        loadSecureMedia(p._id, p.mime);
+    }
+});
 }
 
-
-function renderTeaserMedia(p, isAudio) {
-    if (isAudio) return `<div class="flex items-end gap-1 h-12"><div class="audio-bar"></div><div class="audio-bar" style="animation-delay:0.2s"></div><div class="audio-bar" style="animation-delay:0.4s"></div></div>`;
-    return `<div class="stamped-bg w-full h-full opacity-10 flex items-center justify-center text-[10px] font-bold">ENCRYPTED_DATA</div>`;
-}
-
-/* MODIFIED: Secure Watermarked Rendering Logic */
-function renderFullMedia(p) {
-    const secureUrl =
-        `${API_URL}/api/media/${p._id}?phone=${encodeURIComponent(currentUser.identity)}`;
-
-    if (p.is_stream) {
-        return `
-            <iframe
-                src="${p.stream_url}"
-                class="w-full h-full"
-                allow="autoplay; encrypted-media">
-            </iframe>
-        `;
-    }
-
-    if (p.mime?.includes('video')) {
-        return `
-            <video
-                src="${secureUrl}"
-                controls
-                controlsList="nodownload"
-                playsinline
-                preload="metadata"
-                class="w-full h-full object-cover"
-                onerror="handleMediaError(this, '${p._id}')">
-            </video>
-        `;
-    }
-
-    if (p.mime?.includes('audio')) {
-        return `
-            <div class="flex flex-col items-center justify-center h-full w-full bg-slate-900/50 p-4">
-                <div class="flex gap-1 mb-4">
-                    <div class="audio-bar"></div>
-                    <div class="audio-bar"></div>
-                    <div class="audio-bar"></div>
-                </div>
-
-                <audio
-                    src="${secureUrl}"
-                    controls
-                    controlsList="nodownload"
-                    preload="metadata"
-                    class="w-full"
-                    onerror="handleMediaError(this, '${p._id}')">
-                </audio>
-            </div>
-        `;
-    }
-
-    return `
-        <img
-            src="${secureUrl}"
-            class="w-full h-full object-cover"
-            onerror="handleMediaError(this, '${p._id}')"
-        >
-    `;
-}
 function handleMediaError(element, postId) {
     console.error(
         "❌ MEDIA LOAD ERROR",
