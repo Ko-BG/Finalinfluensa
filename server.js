@@ -1167,15 +1167,104 @@ app.post('/api/payouts/create-onboarding-link', async (req, res) => {
 });
 
 
-const governAfroMinting = async (requestedAmount) => {
-    const vault = await Vault.findOneAndUpdate({ id: 'protocol_vault' }, {}, { upsert: true, new: true });
-    const rewardAmount = requestedAmount * MINTING_REWARD_RATE;
-    const userRewardTotal = rewardAmount * 2; 
-    const totalNewMint = userRewardTotal / (1 - PLATFORM_RESERVE_SHARE);
-    const platformShare = totalNewMint * PLATFORM_RESERVE_SHARE;
-    if (vault.totalAfroMinted + totalNewMint > AFRO_HARD_CAP) return { user: 0, platform: 0 };
-    await Vault.updateOne({ id: 'protocol_vault' }, { $inc: { totalAfroMinted: totalNewMint, platformAfroReserve: platformShare } });
-    return { user: rewardAmount, platform: platformShare };
+const governAfroMinting = async ({
+    requestedAmount,
+    buyer,
+    creator,
+    session
+}) => {
+
+    const amount =
+        Number(requestedAmount);
+
+    if (
+        !Number.isFinite(amount) ||
+        amount <= 0
+    ) {
+        throw new Error("INVALID_MINT_AMOUNT");
+    }
+
+    const rewardPerUser =
+        Number(
+            (amount * MINTING_REWARD_RATE).toFixed(2)
+        );
+
+    // Buyer + creator
+    const totalNewMint =
+        Number(
+            (rewardPerUser * 2).toFixed(2)
+        );
+
+    const vault =
+        await Vault.findOneAndUpdate(
+            { id: "protocol_vault" },
+            {},
+            {
+                upsert: true,
+                new: true,
+                session
+            }
+        );
+
+    if (
+        Number(vault.totalAfroMinted || 0) +
+        totalNewMint >
+        AFRO_HARD_CAP
+    ) {
+        throw new Error("AFRO_HARD_CAP_REACHED");
+    }
+
+    // =====================================================
+    // CREDIT BUYER
+    // =====================================================
+
+    buyer.afroCoins =
+        Number(buyer.afroCoins || 0) +
+        rewardPerUser;
+
+    await buyer.save({
+        session
+    });
+
+    // =====================================================
+    // CREDIT CREATOR
+    // =====================================================
+
+    creator.afroCoins =
+        Number(creator.afroCoins || 0) +
+        rewardPerUser;
+
+    await creator.save({
+        session
+    });
+
+    // =====================================================
+    // UPDATE GLOBAL AFRO SUPPLY
+    // =====================================================
+
+    await Vault.updateOne(
+        { id: "protocol_vault" },
+        {
+            $inc: {
+                totalAfroMinted:
+                    totalNewMint
+            }
+        },
+        {
+            session
+        }
+    );
+
+    return {
+        buyer:
+            rewardPerUser,
+
+        creator:
+            rewardPerUser,
+
+        totalMinted:
+            totalNewMint
+    };
 };
 
 // === DYNAMIC CURRENCY ENGINE (FIXED) ===
@@ -3604,17 +3693,25 @@ if (!transaction) {
             const creatorIdentity =
                 cleanPhone(post.owner);
 
-            // =====================================================
-            // 5. FIND CREATOR
-            // =====================================================
+           // =====================================================
+// 5. FIND CREATOR
+// =====================================================
 
-            const creator = await User.findOne({
-                identity: creatorIdentity
-            }).session(session);
+const creator = await User.findOne({
+    identity: creatorIdentity
+}).session(session);
 
-            if (!creator) {
-                throw new Error("CREATOR_NOT_FOUND");
-            }
+if (!creator) {
+    throw new Error("CREATOR_NOT_FOUND");
+}
+
+const buyer = await User.findOne({
+    identity: buyerIdentity
+}).session(session);
+
+if (!buyer) {
+    throw new Error("BUYER_NOT_FOUND");
+}
 
             // =====================================================
             // 6. CALCULATE 8% / 92%
@@ -3661,28 +3758,28 @@ if (!transaction) {
             });
 
             // =====================================================
-            // 9. CREDIT CREATOR 92%
-            // =====================================================
+// 9. CREDIT CREATOR 92%
+// =====================================================
 
-            const balanceBefore =
-                Number(
-                    creator.earnings || 0
-                );
+const balanceBefore =
+    Number(
+        creator.earnings || 0
+    );
 
-            const balanceAfter =
-                Number(
-                    (
-                        balanceBefore +
-                        split.creatorAmount
-                    ).toFixed(2)
-                );
+const balanceAfter =
+    Number(
+        (
+            balanceBefore +
+            split.creatorAmount
+        ).toFixed(2)
+    );
 
-            creator.earnings =
-                balanceAfter;
+creator.earnings =
+    balanceAfter;
 
-            await creator.save({
-                session
-            });
+await creator.save({
+    session
+});
 
 
 // =====================================================
@@ -3715,131 +3812,167 @@ console.log(
 );
 
 
-            
-            // =====================================================
-            // 10. CREATE IMMUTABLE CREATOR LEDGER
-            // =====================================================
+// =====================================================
+// 10. CREATE IMMUTABLE CREATOR LEDGER
+// =====================================================
 
-            const creatorReference =
-                `SALE-${transactionId}`;
+const creatorReference =
+    `SALE-${transactionId}`;
 
-            await WalletLedger.create(
-                [{
-                    userId: creator._id,
+await WalletLedger.create(
+    [{
+        userId: creator._id,
 
-                    type: "CONTENT_SALE",
+        type: "CONTENT_SALE",
 
-                    direction: "CREDIT",
+        direction: "CREDIT",
 
-                    amount:
-                        split.creatorAmount,
+        amount:
+            split.creatorAmount,
 
-                    currency: "KES",
+        currency: "KES",
 
-                    balanceBefore,
+        balanceBefore,
 
-                    balanceAfter,
+        balanceAfter,
 
-                    reference:
-                        creatorReference,
+        reference:
+            creatorReference,
 
-                    metadata: {
-                        transactionId,
+        metadata: {
+            transactionId,
 
-                        postId:
-                            post._id.toString(),
+            postId:
+                post._id.toString(),
 
-                        payerPhone:
-                            buyerIdentity,
+            payerPhone:
+                buyerIdentity,
 
-                        grossAmount:
-                            split.gross,
+            grossAmount:
+                split.gross,
 
-                        platformFee:
-                            split.platformFee,
+            platformFee:
+                split.platformFee,
 
-                        creatorAmount:
-                            split.creatorAmount,
+            creatorAmount:
+                split.creatorAmount,
 
-                        platformShare:
-                            0.08,
+            platformShare:
+                0.08,
 
-                        creatorShare:
-                            0.92,
+            creatorShare:
+                0.92,
 
-                        receiptNumber
-                    }
-                }],
-                {
-                    session
-                }
-            );
-
-            // =====================================================
-            // 11. MARK TRANSACTION COMPLETED
-            // =====================================================
-
-            transaction.status =
-                "completed";
-
-            transaction.platformFee =
-                split.platformFee;
-
-            transaction.creatorAmount =
-                split.creatorAmount;
-
-            // creatorId = creator phone
-            transaction.creatorId =
-                creatorIdentity;
-
-            transaction.receiptNumber =
-                receiptNumber;
-
-            transaction.completedAt =
-                new Date();
-
-            transaction.resultCode =
-                0;
-
-            transaction.resultDesc =
-                "Payment completed";
-
-            await transaction.save({
-                session
-            });
-
-            // =====================================================
-            // 12. RETURN SETTLEMENT
-            // =====================================================
-
-            settlementResult = {
-                alreadyProcessed: false,
-
-                creatorId:
-                    creatorIdentity,
-
-                creatorAmount:
-                    split.creatorAmount,
-
-                platformFee:
-                    split.platformFee,
-
-                gross:
-                    split.gross,
-
-                buyer:
-                    buyerIdentity,
-
-                accessGranted: true
-            };
-        });
-
-        return settlementResult;
-
-    } finally {
-        await session.endSession();
+            receiptNumber
+        }
+    }],
+    {
+        session
     }
-}
+);
+
+
+// =====================================================
+// 10B. MINT AFRO COINS TO BUYER + CREATOR
+// =====================================================
+
+const afroMint =
+    await governAfroMinting({
+        requestedAmount:
+            split.gross,
+
+        buyer,
+
+        creator,
+
+        session
+    });
+
+console.log(
+    "🪙 AFRO MINTING COMPLETE:",
+    {
+        transactionId,
+
+        buyer:
+            afroMint.buyer,
+
+        creator:
+            afroMint.creator,
+
+        totalMinted:
+            afroMint.totalMinted
+    }
+);
+
+
+// =====================================================
+// 11. MARK TRANSACTION COMPLETED
+// =====================================================
+
+transaction.status =
+    "completed";
+
+transaction.platformFee =
+    split.platformFee;
+
+transaction.creatorAmount =
+    split.creatorAmount;
+
+transaction.creatorId =
+    creatorIdentity;
+
+transaction.receiptNumber =
+    receiptNumber;
+
+transaction.completedAt =
+    new Date();
+
+transaction.resultCode =
+    0;
+
+transaction.resultDesc =
+    "Payment completed";
+
+await transaction.save({
+    session
+});
+
+
+// =====================================================
+// 12. RETURN SETTLEMENT
+// =====================================================
+
+settlementResult = {
+    alreadyProcessed: false,
+
+    creatorId:
+        creatorIdentity,
+
+    creatorAmount:
+        split.creatorAmount,
+
+    platformFee:
+        split.platformFee,
+
+    gross:
+        split.gross,
+
+    buyer:
+        buyerIdentity,
+
+    accessGranted: true,
+
+    afroMinted: {
+        buyer:
+            afroMint.buyer,
+
+        creator:
+            afroMint.creator,
+
+        total:
+            afroMint.totalMinted
+    }
+};
 async function triggerB2C(
     phone,
     amount,
