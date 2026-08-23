@@ -6732,10 +6732,22 @@ if (!isOwner && !isLicensed) {
             }
         );
 
-        return res.redirect(
-            302,
-            finalUrl
-        );
+        const isApp = req.headers['x-client'] === 'mobile-app' || 
+              req.query.format === 'json';
+
+if (isApp) {
+    // App → return JSON (reliable)
+    return res.status(200).json({
+        success: true,
+        unlocked: true,
+        url: finalUrl,
+        mime: mime.startsWith("video/") ? "video/mp4" : mime,
+        expiresIn: 300
+    });
+} else {
+    // Browser → keep old redirect behavior
+    return res.redirect(302, finalUrl);
+}
 
     } catch (err) {
 
