@@ -2362,7 +2362,7 @@ const triggerStripePayment = async (
     type = 'unlock', 
     handshakeId = null,
     recipientStripeAccountId = null,
-    platformFeePercent = 0.0789
+    platformFeePercent = 0.08
 ) => {
     try {
         // ✅ Now async + live rates
