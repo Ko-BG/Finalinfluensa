@@ -5585,7 +5585,7 @@ app.get('/api/media/:postId', async (req, res) => {
         // 1. VALIDATE REQUEST
         // ============================================================
 
-        const { phone } = req.query;
+        const { phone, format } = req.query;
         const { postId } = req.params;
 
         if (!phone) {
@@ -6483,38 +6483,52 @@ if (!isOwner && !isLicensed) {
 
             else if (mime.startsWith("audio/")) {
 
-                /*
-                 * Audio does not need local processing.
-                 *
-                 * Authorization has already been completed above.
-                 */
+    /*
+     * Audio does not need local processing.
+     * Authorization has already been completed above.
+     */
 
-                const audioCommand =
-                    new GetObjectCommand({
-                        Bucket:
-                            process.env.AWS_S3_BUCKET_NAME,
+    const audioCommand =
+        new GetObjectCommand({
+            Bucket:
+                process.env.AWS_S3_BUCKET_NAME,
 
-                        Key:
-                            originalKey,
+            Key:
+                originalKey,
 
-                        ResponseContentType:
-                            mime
-                    });
+            ResponseContentType:
+                mime
+        });
 
-                const audioUrl =
-                    await getSignedUrl(
-                        s3,
-                        audioCommand,
-                        {
-                            expiresIn: 300
-                        }
-                    );
-
-                return res.redirect(
-                    302,
-                    audioUrl
-                );
+    const audioUrl =
+        await getSignedUrl(
+            s3,
+            audioCommand,
+            {
+                expiresIn: 300
             }
+        );
+
+    // App → return JSON
+    if (
+        req.headers['x-client'] === 'mobile-app' ||
+        req.query.format === 'json'
+    ) {
+        return res.status(200).json({
+            success: true,
+            unlocked: true,
+            url: audioUrl,
+            expiresIn: 300,
+            mime
+        });
+    }
+
+    // Browser → direct playback
+    return res.redirect(
+        302,
+        audioUrl
+    );
+}
 
             // ========================================================
             // 11. VERIFY GENERATED FILE
@@ -6732,22 +6746,25 @@ if (!isOwner && !isLicensed) {
             }
         );
 
-        const isApp = req.headers['x-client'] === 'mobile-app' || 
-              req.query.format === 'json';
+        const isApp =
+    req.headers['x-client'] === 'mobile-app' ||
+    req.query.format === 'json';
 
 if (isApp) {
-    // App → return JSON (reliable)
+    // App → return JSON
     return res.status(200).json({
         success: true,
         unlocked: true,
         url: finalUrl,
-        mime: mime.startsWith("video/") ? "video/mp4" : mime,
+        mime: mime.startsWith("video/")
+            ? "video/mp4"
+            : mime,
         expiresIn: 300
     });
-} else {
-    // Browser → keep old redirect behavior
-    return res.redirect(302, finalUrl);
 }
+
+// Browser → keep normal redirect behavior
+return res.redirect(302, finalUrl);
 
     } catch (err) {
 
