@@ -3973,6 +3973,62 @@ settlementResult = {
             afroMint.totalMinted
     }
 };
+        settlementResult = {
+            alreadyProcessed: false,
+
+            creatorId:
+                creatorIdentity,
+
+            creatorAmount:
+                split.creatorAmount,
+
+            platformFee:
+                split.platformFee,
+
+            gross:
+                split.gross,
+
+            buyer:
+                buyerIdentity,
+
+            accessGranted: true,
+
+            afroMinted: {
+                buyer:
+                    afroMint.buyer,
+
+                creator:
+                    afroMint.creator,
+
+                total:
+                    afroMint.totalMinted
+            }
+        };
+
+        }); // closes withTransaction()
+
+        return settlementResult;
+
+    } catch (error) {
+
+        console.error(
+            "❌ CONTENT PURCHASE SETTLEMENT FAILED:",
+            {
+                transactionId,
+                postId,
+                error: error.message,
+                stack: error.stack
+            }
+        );
+
+        throw error;
+
+    } finally {
+
+        await session.endSession();
+
+    }
+}
 async function triggerB2C(
     phone,
     amount,
