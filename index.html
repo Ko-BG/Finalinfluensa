@@ -1158,6 +1158,98 @@ async function fetchPosts() {
         render(allPosts);
     } catch (e) { SystemLog("Feed Sync Error", "error"); }
 }
+
+function render(posts) {
+  const container = document.getElementById("feedContainer");
+  if (!container) return;
+
+  if (!posts || posts.length === 0) {
+    container.innerHTML = `<div class="col-span-full py-20 text-center opacity-40 uppercase tracking-[0.4em] text-xs">Zero Matches in Neural Mesh</div>`;
+    return;
+  }
+
+  // Helper to safely escape strings for inline onclick attributes
+  const escapeAttr = (str) => (str || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+
+  // Normalize current user string formatting
+  const activeUserNode = clientCleanPhone(currentUser?.identity);
+
+  container.innerHTML = posts.map(p => {
+    // Standard flat array formatting
+    const unlockedArray = p.unlocked_by || [];
+    const licensedArray = p.licensed_to || [];
+    
+    // Core structural permission variables
+    const isOwner = clientCleanPhone(p.owner) === activeUserNode;
+    const isUnlocked = unlockedArray.map(n => clientCleanPhone(n)).includes(activeUserNode) || isOwner;
+    const isLicensed = licensedArray.map(n => clientCleanPhone(n)).includes(activeUserNode);
+    
+    // Diagnostic logging
+    console.log(`============= FEED AUDIT FOR POST: ${p.title} (${p._id}) =============`);
+    console.log(` 👤 Active User Identity: "${activeUserNode}"`);
+    console.log(` 🔑 Asset Owner Identity: "${p.owner}"`);
+    console.log(` 📊 RESOLUTION -> IsOwner: ${isOwner} | IsUnlocked: ${isUnlocked} | IsLicensed: ${isLicensed}`);
+    console.log(`====================================================================`);
+
+    const isAudio = p.mime?.includes('audio');
+    const canResell = isUnlocked && !isOwner;
+    const safeTitle = escapeAttr(p.title);
+
+    return `
+      <div id="post-${p._id}" class="glass overflow-hidden ${isUnlocked || isLicensed ? 'border-cyan-500/40' : 'border-white/5'} flex flex-col group transition-all h-full relative">
+        <div class="h-64 bg-black relative flex items-center justify-center overflow-hidden">
+          ${(isUnlocked || isLicensed) ? renderFullMedia(p) : renderTeaserMedia(p, isAudio)}
+          <div class="anti-piracy-overlay absolute inset-0 opacity-20"></div>
+          
+          ${p.scarcity_limit > 0 ? `<div class="absolute top-4 right-4 z-20 px-3 py-1 bg-red-500 text-white text-[8px] font-black uppercase rounded-full">Ltd: ${p.scarcity_limit - (p.unlocked_by?.length || 0)} Left</div>` : ''}
+          
+          <div class="absolute top-4 left-4 flex gap-2 z-20">
+             <button onclick="openHandshake('${p._id}', '${safeTitle}')" class="w-10 h-10 rounded-full glass border border-yellow-500/30 flex items-center justify-center handshake-shake text-xl"><span>🤝</span></button>
+             <button onclick="shareAndDownload('${p._id}', ${p.price})" class="w-10 h-10 rounded-full glass border border-cyan-500/30 flex items-center justify-center text-xl">🔗</button>
+          </div>
+          
+          ${p.is_resell ? `<div class="absolute top-4 right-4 z-20 px-2.5 py-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[8px] font-mono tracking-widest uppercase rounded-full">Resell Node</div>` : ''}
+          
+          ${!(isUnlocked || isLicensed) ? `
+            <div class="absolute inset-0 bg-gradient-to-t from-[#0a0e1f] via-transparent flex flex-col items-center justify-end p-6">
+                <button id="unlock-btn-${p._id}" 
+                        onclick="unlockIP('${p._id}')" 
+                        class="bg-yellow-500 text-black w-full py-3 rounded-xl font-black text-[11px] uppercase btn-glow mb-2">
+                    Unlock • ${currentUser && currentUser.identity?.startsWith('1') ? 'Apple Pay / Card' : 'M-PESA'}
+                </button>
+            </div>` : `
+            <div class="absolute bottom-2 right-2 flex gap-2 z-20">
+                ${canResell ? `<button onclick="openResellModal('${p._id}', '${safeTitle}')" class="bg-cyan-500/20 text-cyan-400 border border-cyan-500/50 px-3 py-2 rounded-lg font-bold text-[9px] uppercase hover:bg-cyan-500 hover:text-black transition-all">🔄 Resell</button>` : ''}
+                ${isOwner ? `<button onclick="burnIP('${p._id}')" class="bg-red-500/20 text-red-500 border border-red-500/50 px-4 py-2 rounded-lg font-bold text-[9px] uppercase hover:bg-red-500 hover:text-white transition-all">Burn IP</button>` : ''}
+            </div>
+          `}
+        </div>
+        <div class="p-6">
+          <div class="flex justify-between items-start">
+            <h4 class="text-xl font-bold lowercase truncate w-2/3">${p.title || 'Untitled'}</h4>
+            <button onclick="viewCID('${p._id}')" class="text-[8px] font-mono text-cyan-500 bg-cyan-500/10 px-2 py-1 rounded">CID_AUDIT</button>
+          </div>
+          <div class="flex justify-between items-center mt-4">
+            <span class="text-[9px] text-slate-500 uppercase">${p.is_resell ? `Root: ...${(p.original_creator || '').slice(-4)}` : `Node: ...${(p.owner || '').slice(-4)}`}</span>
+        <span class="text-yellow-500 font-bold uppercase text-[12px]">${formatPrice(p.price || 0)}</span>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+// After container.innerHTML = posts.map(...)
+
+posts.forEach(p => {
+    const isOwner = clientCleanPhone(p.owner) === activeUserNode;
+    const unlockedArray = p.unlocked_by || [];
+    const isUnlocked = unlockedArray.map(n => clientCleanPhone(n)).includes(activeUserNode) || isOwner;
+    const isLicensed = (p.licensed_to || []).map(n => clientCleanPhone(n)).includes(activeUserNode);
+
+    if (isUnlocked || isLicensed) {
+        loadSecureMedia(p._id, p.mime);
+    }
+});
+}
 function renderTeaserMedia(p, isAudio) {
     if (isAudio) return `<div class="flex items-end gap-1 h-12"><div class="audio-bar"></div><div class="audio-bar" style="animation-delay:0.2s"></div><div class="audio-bar" style="animation-delay:0.4s"></div></div>`;
     return `<div class="stamped-bg w-full h-full opacity-10 flex items-center justify-center text-[10px] font-bold">ENCRYPTED_DATA</div>`;
@@ -1301,98 +1393,6 @@ async function loadSecureMedia(postId, mime) {
         console.error("Failed to load secure media:", postId, err);
     }
 }
-function render(posts) {
-  const container = document.getElementById("feedContainer");
-  if (!container) return;
-
-  if (!posts || posts.length === 0) {
-    container.innerHTML = `<div class="col-span-full py-20 text-center opacity-40 uppercase tracking-[0.4em] text-xs">Zero Matches in Neural Mesh</div>`;
-    return;
-  }
-
-  // Helper to safely escape strings for inline onclick attributes
-  const escapeAttr = (str) => (str || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
-
-  // Normalize current user string formatting
-  const activeUserNode = clientCleanPhone(currentUser?.identity);
-
-  container.innerHTML = posts.map(p => {
-    // Standard flat array formatting
-    const unlockedArray = p.unlocked_by || [];
-    const licensedArray = p.licensed_to || [];
-    
-    // Core structural permission variables
-    const isOwner = clientCleanPhone(p.owner) === activeUserNode;
-    const isUnlocked = unlockedArray.map(n => clientCleanPhone(n)).includes(activeUserNode) || isOwner;
-    const isLicensed = licensedArray.map(n => clientCleanPhone(n)).includes(activeUserNode);
-    
-    // Diagnostic logging
-    console.log(`============= FEED AUDIT FOR POST: ${p.title} (${p._id}) =============`);
-    console.log(` 👤 Active User Identity: "${activeUserNode}"`);
-    console.log(` 🔑 Asset Owner Identity: "${p.owner}"`);
-    console.log(` 📊 RESOLUTION -> IsOwner: ${isOwner} | IsUnlocked: ${isUnlocked} | IsLicensed: ${isLicensed}`);
-    console.log(`====================================================================`);
-
-    const isAudio = p.mime?.includes('audio');
-    const canResell = isUnlocked && !isOwner;
-    const safeTitle = escapeAttr(p.title);
-
-    return `
-      <div id="post-${p._id}" class="glass overflow-hidden ${isUnlocked || isLicensed ? 'border-cyan-500/40' : 'border-white/5'} flex flex-col group transition-all h-full relative">
-        <div class="h-64 bg-black relative flex items-center justify-center overflow-hidden">
-          ${(isUnlocked || isLicensed) ? renderFullMedia(p) : renderTeaserMedia(p, isAudio)}
-          <div class="anti-piracy-overlay absolute inset-0 opacity-20"></div>
-          
-          ${p.scarcity_limit > 0 ? `<div class="absolute top-4 right-4 z-20 px-3 py-1 bg-red-500 text-white text-[8px] font-black uppercase rounded-full">Ltd: ${p.scarcity_limit - (p.unlocked_by?.length || 0)} Left</div>` : ''}
-          
-          <div class="absolute top-4 left-4 flex gap-2 z-20">
-             <button onclick="openHandshake('${p._id}', '${safeTitle}')" class="w-10 h-10 rounded-full glass border border-yellow-500/30 flex items-center justify-center handshake-shake text-xl"><span>🤝</span></button>
-             <button onclick="shareAndDownload('${p._id}', ${p.price})" class="w-10 h-10 rounded-full glass border border-cyan-500/30 flex items-center justify-center text-xl">🔗</button>
-          </div>
-          
-          ${p.is_resell ? `<div class="absolute top-4 right-4 z-20 px-2.5 py-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[8px] font-mono tracking-widest uppercase rounded-full">Resell Node</div>` : ''}
-          
-          ${!(isUnlocked || isLicensed) ? `
-            <div class="absolute inset-0 bg-gradient-to-t from-[#0a0e1f] via-transparent flex flex-col items-center justify-end p-6">
-                <button id="unlock-btn-${p._id}" 
-                        onclick="unlockIP('${p._id}')" 
-                        class="bg-yellow-500 text-black w-full py-3 rounded-xl font-black text-[11px] uppercase btn-glow mb-2">
-                    Unlock • ${currentUser && currentUser.identity?.startsWith('1') ? 'Apple Pay / Card' : 'M-PESA'}
-                </button>
-            </div>` : `
-            <div class="absolute bottom-2 right-2 flex gap-2 z-20">
-                ${canResell ? `<button onclick="openResellModal('${p._id}', '${safeTitle}')" class="bg-cyan-500/20 text-cyan-400 border border-cyan-500/50 px-3 py-2 rounded-lg font-bold text-[9px] uppercase hover:bg-cyan-500 hover:text-black transition-all">🔄 Resell</button>` : ''}
-                ${isOwner ? `<button onclick="burnIP('${p._id}')" class="bg-red-500/20 text-red-500 border border-red-500/50 px-4 py-2 rounded-lg font-bold text-[9px] uppercase hover:bg-red-500 hover:text-white transition-all">Burn IP</button>` : ''}
-            </div>
-          `}
-        </div>
-        <div class="p-6">
-          <div class="flex justify-between items-start">
-            <h4 class="text-xl font-bold lowercase truncate w-2/3">${p.title || 'Untitled'}</h4>
-            <button onclick="viewCID('${p._id}')" class="text-[8px] font-mono text-cyan-500 bg-cyan-500/10 px-2 py-1 rounded">CID_AUDIT</button>
-          </div>
-          <div class="flex justify-between items-center mt-4">
-            <span class="text-[9px] text-slate-500 uppercase">${p.is_resell ? `Root: ...${(p.original_creator || '').slice(-4)}` : `Node: ...${(p.owner || '').slice(-4)}`}</span>
-        <span class="text-yellow-500 font-bold uppercase text-[12px]">${formatPrice(p.price || 0)}</span>
-          </div>
-        </div>
-      </div>`;
-  }).join('');
-
-// After container.innerHTML = posts.map(...)
-
-posts.forEach(p => {
-    const isOwner = clientCleanPhone(p.owner) === activeUserNode;
-    const unlockedArray = p.unlocked_by || [];
-    const isUnlocked = unlockedArray.map(n => clientCleanPhone(n)).includes(activeUserNode) || isOwner;
-    const isLicensed = (p.licensed_to || []).map(n => clientCleanPhone(n)).includes(activeUserNode);
-
-    if (isUnlocked || isLicensed) {
-        loadSecureMedia(p._id, p.mime);
-    }
-});
-}
-
 function handleMediaError(element, postId) {
     console.error(
         "❌ MEDIA LOAD ERROR",
