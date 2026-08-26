@@ -50,7 +50,6 @@ const multerS3 = require('multer-s3');
 const path = require('path');
 
 
-// Initialize S3 Client
 const s3 = new S3Client({
     region: process.env.AWS_REGION,
     credentials: {
@@ -64,18 +63,26 @@ const upload = multer({
     storage: multerS3({
         s3: s3,
         bucket: process.env.AWS_S3_BUCKET_NAME,
+        
+        // 1. Force correct MIME type in S3 (e.g. video/mp4 instead of application/octet-stream)
+        contentType: multerS3.AUTO_CONTENT_TYPE,
+        
+        // 2. Prevent iOS WebKit disk-cache CORS corruption
+        cacheControl: "no-cache",
+
         metadata: (req, file, cb) => {
             cb(null, { fieldName: file.fieldname });
         },
         key: (req, file, cb) => {
             const fileName = `${Date.now()}-${path.basename(file.originalname)}`;
-            cb(null, fileName); // File name stored in S3
+            cb(null, fileName);
         },
     }),
     limits: { fileSize: 100 * 1024 * 1024 }, // 100 MB limit
 });
 
 module.exports = upload;
+
 
 app.use(cors());
 // Raw parser strictly isolated for the Stripe verification step
