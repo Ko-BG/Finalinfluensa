@@ -1494,21 +1494,24 @@ async function unlockIP(postId, type = 'unlock') {
     // ============================================================
 
     if (data.alreadyUnlocked === true || data.authorized === true) {
-      console.log(
+    console.log(
         `🔓 Already authorized for post ${postId}. No payment required.`
-      );
+    );
 
-      showToast("✅ Already unlocked. Opening media...");
+    showToast("✅ Already unlocked. Opening media...");
 
-      // Re-enable the button while the media request is handled.
-      if (btn) {
+    // Re-enable the button
+    if (btn) {
         btn.disabled = false;
         btn.classList.remove('processing-payout');
-      }
-
-      // Open/view the already-paid media.
-      return viewPostMedia(postId);
     }
+
+    // Re-fetch posts so render() sees the authorization
+    // and loadSecureMedia() loads the actual media.
+    await fetchPosts();
+
+    return;
+}
 
     // ============================================================
     // NORMAL PAYMENT FLOW
