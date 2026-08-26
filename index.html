@@ -1830,7 +1830,7 @@ async function startPaymentPolling(
         if (postId) {
           try {
             const mediaRes = await fetch(
-              `${API_URL}/api/media/${encodeURIComponent(postId)}?phone=${encodeURIComponent(currentUser.identity)}`,
+              `${API_URL}/api/media/${encodeURIComponent(postId)}?phone=${encodeURIComponent(currentUser.identity)}&format=json`,
               {
                 method: "GET",
                 cache: "no-store",
