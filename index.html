@@ -1269,15 +1269,18 @@ function renderFullMedia(p) {
 
     if (p.mime?.includes('video')) {
         return `
-            <video
-                id="video-${p._id}"
-                controls
-                controlsList="nodownload"
-                playsinline
-                preload="metadata"
-                class="w-full h-full object-cover"
-                onerror="handleMediaError(this, '${p._id}')">
-            </video>
+       <video
+  id="video-${p._id}"
+  controls
+  controlsList="nodownload"
+  playsinline
+  webkit-playsinline
+  crossorigin="anonymous"
+  preload="metadata"
+  class="w-full h-full object-cover"
+  onerror="handleMediaError(this, '${p._id}')">
+</video>
+
         `;
     }
 
@@ -1328,44 +1331,51 @@ async function loadSecureMedia(postId, mime) {
         }
 
         if (mime?.includes("video")) {
-            const video = document.getElementById(`video-${postId}`);
+    const video = document.getElementById(`video-${postId}`);
 
-            if (!video) {
-                console.warn("Video element not found:", postId);
-                return;
-            }
+    if (!video) {
+        console.warn("Video element not found:", postId);
+        return;
+    }
 
-            video.onloadedmetadata = () => {
-                console.log("✅ VIDEO METADATA LOADED:", postId, {
-                    duration: video.duration,
-                    width: video.videoWidth,
-                    height: video.videoHeight
-                });
-            };
+    // MANDATORY FOR iOS & S3 CORS:
+    video.crossOrigin = "anonymous";
+    video.playsInline = true;
 
-            video.oncanplay = () => {
-                console.log("▶️ VIDEO CAN PLAY:", postId);
-            };
+    video.onloadedmetadata = () => {
+        console.log("✅ VIDEO METADATA LOADED:", postId, {
+            duration: video.duration,
+            width: video.videoWidth,
+            height: video.videoHeight
+        });
+    };
 
-            video.onerror = () => {
-                console.error("❌ VIDEO PLAYBACK ERROR:", {
-                    postId,
-                    error: video.error,
-                    networkState: video.networkState,
-                    readyState: video.readyState,
-                    url: data.url
-                });
-            };
+    video.oncanplay = () => {
+        console.log("▶️ VIDEO CAN PLAY:", postId);
+    };
 
-            video.src = data.url;
-            video.load();
+    video.onerror = () => {
+        console.error("❌ VIDEO PLAYBACK ERROR:", {
+            postId,
+            error: video.error ? {
+                code: video.error.code,      // 1: Aborted, 2: Network, 3: Decode, 4: Source not supported
+                message: video.error.message
+            } : null,
+            networkState: video.networkState,
+            readyState: video.readyState,
+            url: data.url
+        });
+    };
 
-            console.log("🎬 VIDEO URL ATTACHED:", {
-                postId,
-                urlReceived: !!data.url,
-                mime: data.mime,
-                videoElementFound: true
-            });
+    video.src = data.url;
+    video.load();
+
+    console.log("🎬 VIDEO URL ATTACHED:", {
+        postId,
+        urlReceived: !!data.url,
+        mime: data.mime,
+        videoElementFound: true
+    });
 
         } else if (mime?.includes("audio")) {
             const audio = document.getElementById(`audio-${postId}`);
