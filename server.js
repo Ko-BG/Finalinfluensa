@@ -8500,6 +8500,9 @@ app.set('trust proxy', 1);
 
 
 
+// 1. Declare ipLogs array in the scope outside the middleware
+const ipLogs = [];
+
 const ipTracker = (req, res, next) => {
     try {
         const clientIp = req.headers['x-forwarded-for']
@@ -8516,9 +8519,9 @@ const ipTracker = (req, res, next) => {
             timestamp: new Date().toISOString()
         };
 
-        ipLogs.push(accessSignature); // Safe in-memory array
+        ipLogs.push(accessSignature); // Now ipLogs is defined!
 
-        // Optional: Limit log size to prevent memory leak
+        // Limit log size to prevent memory leak
         if (ipLogs.length > 1000) ipLogs.shift();
 
     } catch (e) {
@@ -8529,6 +8532,7 @@ const ipTracker = (req, res, next) => {
 };
 
 app.use(ipTracker);
+
 // ==========================================
 // 3. IP MARKETPLACE & COLLABORATION ROUTES
 // ==========================================
