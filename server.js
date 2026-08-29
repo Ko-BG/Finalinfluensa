@@ -11,6 +11,8 @@ const { Server } = require('socket.io');
 require('dotenv').config();
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const router = express.Router();
+const dns = require('dns');
+dns.setDefaultResultOrder('ipv4first');
 
  
 
