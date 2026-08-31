@@ -6388,34 +6388,39 @@ app.post('/api/posts/:id/resell', async (req, res) => {
         }
 
         // 2. Generate a new unique CID for this specific node
-        // We use the parent's CID + Reseller ID + Timestamp to ensure uniqueness
         const uniqueResellCid = crypto.createHash('sha256')
             .update(`${parent.cid}-${cleanedReseller}-${Date.now()}`)
             .digest('hex');
 
-        // 3. Create the new node while preserving original lineage
+        // 3. Generate a brand-new file encryption key for the resell node
+        //    (independent from the parent’s key)
+        const newFileKey = crypto.randomBytes(32).toString('hex');   // 256-bit key
+
+        // 4. Create the new node while preserving original lineage
         const resellPost = await Post.create({
             title: parent.title,
             price: resellPrice || parent.price,
             owner: cleanedReseller,
             mime: parent.mime,
             filename: parent.filename,
-            cid: uniqueResellCid, // NEW: Unique CID to prevent database collisions
+            cid: uniqueResellCid,
             scarcity_limit: parent.scarcity_limit,
             is_stream: parent.is_stream,
             stream_url: parent.stream_url,
             is_resell: true,
             parent_post_id: parent._id,
-            // Maintain the original creator identity for royalty distribution
             original_creator: parent.original_creator || parent.owner,
-            // Ensure clean start for new access lists
+
+            // Clean access lists for the new node
             unlocked_by: [],
-            licensed_to: []
+            licensed_to: [],
+
+            // NEW: Give the resell node its own encryption key
+            file_key: newFileKey
         });
 
         res.status(201).json(resellPost);
     } catch (err) {
-        // Detailed error logging to catch exact schema violations
         console.error("❌ FRACTIONAL RESELL ENTRY ENGINE FAILURE:", err);
         res.status(500).json({ 
             error: "Resell Asset Grid Deployment Failed", 
@@ -6423,7 +6428,6 @@ app.post('/api/posts/:id/resell', async (req, res) => {
         });
     }
 });
-
 
 app.get('/api/handshake/outgoing/:identity', async (req, res) => {
     try {
