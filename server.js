@@ -6393,7 +6393,6 @@ app.post('/api/posts/:id/resell', async (req, res) => {
             .digest('hex');
 
         // 3. Generate a brand-new file encryption key for the resell node
-        //    (independent from the parent’s key)
         const newFileKey = crypto.randomBytes(32).toString('hex');   // 256-bit key
 
         // 4. Create the new node while preserving original lineage
@@ -6411,11 +6410,11 @@ app.post('/api/posts/:id/resell', async (req, res) => {
             parent_post_id: parent._id,
             original_creator: parent.original_creator || parent.owner,
 
-            // Clean access lists for the new node
-            unlocked_by: [],
+            // Reseller is automatically unlocked so they can play immediately
+            unlocked_by: [cleanedReseller],
             licensed_to: [],
 
-            // NEW: Give the resell node its own encryption key
+            // Own independent encryption key
             file_key: newFileKey
         });
 
