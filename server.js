@@ -5871,6 +5871,12 @@ async function handlePaymentCanceled(paymentIntent) {
 
 
 app.post('/api/mpesa/withdraw', async (req, res) => {
+
+    console.log("🔥🔥🔥 WITHDRAW ENDPOINT HIT 🔥🔥🔥");
+    console.log("📦 BODY:", req.body);
+    console.log("📋 CONTENT-TYPE:", req.headers['content-type']);
+
+    
     const { identity, amount } = req.body;
     const cleaned = cleanPhone(identity);
     const withdrawalAmount = Number(amount);
