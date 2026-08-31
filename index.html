@@ -2848,21 +2848,36 @@ async function finalizeWithdrawal() {
         // 4. PARSE SERVER RESPONSE
         // =====================================================
 
-        let data = {};
+        // =====================================================
+// 4. DEBUG SERVER RESPONSE
+// =====================================================
 
-        try {
-            data = await response.json();
-        } catch {
-            data = {
-                error: "INVALID_SERVER_RESPONSE"
-            };
-        }
+console.log("📡 Withdrawal HTTP status:", response.status);
+console.log("📡 Withdrawal status text:", response.statusText);
+console.log(
+    "📡 Withdrawal content type:",
+    response.headers.get("content-type")
+);
 
-        console.log(
-            "💸 Withdrawal response:",
-            data
-        );
+const rawResponse = await response.text();
 
+console.log("📥 RAW WITHDRAWAL RESPONSE:", rawResponse);
+
+let data = {};
+
+try {
+    data = JSON.parse(rawResponse);
+} catch (error) {
+    console.error("❌ Response is NOT valid JSON:", error);
+
+    showToast(
+        `Server error (${response.status}). Check console.`
+    );
+
+    return;
+}
+
+console.log("💸 Parsed withdrawal response:", data);
         // =====================================================
         // 5. WITHDRAWAL ACCEPTED
         // =====================================================
