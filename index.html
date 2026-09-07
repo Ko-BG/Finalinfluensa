@@ -751,18 +751,42 @@ let userCurrency = { code: 'KES', rate: 1 };
 
 async function loadRegionalContext(phone) {
   try {
-    const res = await fetch(`${API_URL}/regional-context?phone=${encodeURIComponent(phone)}`);
+    const res = await fetch(
+      `${API_URL}/regional-context?phone=${encodeURIComponent(phone)}`
+    );
+
     const data = await res.json();
+
+    console.log('🌍 REGIONAL CONTEXT RESPONSE:', data);
+
     if (data.success && data.currency) {
-      userCurrency = data.currency;
-      console.log('💱 Regional currency set →', userCurrency);
-      // Re-render everything with the new currency
-      if (typeof fetchPosts === 'function') fetchPosts();
-      if (typeof updateWalletUI === 'function') updateWalletUI();
-      if (typeof loadEcomProducts === 'function') loadEcomProducts();
+
+      userCurrency = {
+        code: data.currency.code,
+        rate: Number(data.currency.rate) || 1
+      };
+
+      console.log('💱 GEOSMART CURRENCY SET:', userCurrency);
+
+      if (data.country_code) {
+        window.userCountry = data.country_code;
+      }
+
+      if (typeof fetchPosts === 'function') {
+        await fetchPosts();
+      }
+
+      if (typeof updateWalletUI === 'function') {
+        await updateWalletUI();
+      }
+
+      if (typeof loadEcomProducts === 'function') {
+        await loadEcomProducts();
+      }
     }
+
   } catch (e) {
-    console.warn('Could not load regional context, staying on KES');
+    console.error('❌ Regional context error:', e);
   }
 }
 
@@ -3242,32 +3266,53 @@ async function loadEcomProducts() {
   const container = document.getElementById('ecomContainer');
   if (!container) return;
 
-  container.innerHTML = `<div class="col-span-full py-12 text-center text-yellow-400">Loading products...</div>`;
-  
+  container.innerHTML = `
+    <div class="col-span-full py-12 text-center text-yellow-400">
+      Loading products...
+    </div>
+  `;
+
   try {
     const res = await fetch(`${API_URL}/products`);
     allEcomProducts = await res.json();
-    renderEcomProducts(allEcomProducts);
+
+    console.log('🛒 Products loaded');
+    console.log('💱 Currency at product render:', userCurrency);
+
+    await renderEcomProducts(allEcomProducts);
+
   } catch (e) {
     console.error(e);
-    container.innerHTML = `<div class="col-span-full py-12 text-center text-red-400">Failed to load store. Check connection.</div>`;
+
+    container.innerHTML = `
+      <div class="col-span-full py-12 text-center text-red-400">
+        Failed to load store. Check connection.
+      </div>
+    `;
   }
 }
-
-
- async function renderEcomProducts(products) {
+async function renderEcomProducts(products) {
   const container = document.getElementById('ecomContainer');
+  if (!container) return;
 
-  // Make sure regional currency has been loaded
-  // before rendering prices.
+  // DO NOT reset userCurrency to KES here.
+  // GeoSmart must provide the currency.
   if (!userCurrency || !userCurrency.code) {
-    userCurrency = { code: 'KES', rate: 1 };
+    console.error('❌ GeoSmart currency is not loaded:', userCurrency);
+
+    container.innerHTML = `
+      <div class="col-span-full py-12 text-center text-red-400">
+        Unable to determine regional currency.
+      </div>
+    `;
+
+    return;
   }
 
   const currencyCode = userCurrency.code;
   const rate = Number(userCurrency.rate) || 1;
 
-  console.log('💱 Rendering products with:', {
+  console.log('💱 RENDERING ECOM WITH GEOSMART:', {
     currency: currencyCode,
     rate: rate
   });
@@ -3275,12 +3320,12 @@ async function loadEcomProducts() {
   container.innerHTML = products.map(p => {
 
     const basePrice = Number(p.price) || 0;
+
+    // GeoSmart converted amount
     const geoAmount = basePrice * rate;
 
-    const formattedPrice = new Intl.NumberFormat(undefined, {
-      style: 'currency',
-      currency: currencyCode
-    }).format(geoAmount);
+    // Use your existing formatter
+    const formattedPrice = formatPrice(basePrice);
 
     return `
       <div class="glass product-card overflow-hidden flex flex-col h-full">
@@ -3289,7 +3334,7 @@ async function loadEcomProducts() {
 
           <img
             src="${
-              (p.images && p.images.length > 0)
+              p.images && p.images.length > 0
                 ? '/uploads/' + p.images[0]
                 : (p.image || '/uploads/default-product.jpg')
             }"
@@ -3325,7 +3370,7 @@ async function loadEcomProducts() {
           </h4>
 
           <p class="text-sm text-slate-400 mt-1 line-clamp-2">
-            ${p.description}
+            ${p.description || ''}
           </p>
 
           <div class="mt-auto pt-6">
@@ -3344,7 +3389,7 @@ async function loadEcomProducts() {
                   {
                     amount: ${geoAmount},
                     currency: "${currencyCode}",
-                    country: "${userCountry || 'KE'}",
+                    country: "${window.userCountry || "KE"}",
                     formatted: "${formattedPrice}"
                   }
                 )'
@@ -3364,6 +3409,8 @@ async function loadEcomProducts() {
     `;
   }).join('');
 }
+ 
+  
 function updateProductImagesName() {
     const files = document.getElementById("productImages").files;
     const label = document.getElementById("productImagesLabel");
