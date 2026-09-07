@@ -8400,102 +8400,257 @@ app.post('/api/products', upload.array('images', 5), async (req, res) => {
 
 // Reuse your existing unlock/payment system for products
 app.post('/api/products/:id/purchase', async (req, res) => {
+
   try {
-    const { phone, paymentMethod, currency } = req.body;
+
+    const {
+      phone,
+      paymentMethod,
+      currency,
+      amount,
+      country,
+      paymentType
+    } = req.body;
+
     const productId = req.params.id;
-    // Find product
+
+    // ============================================
+    // FIND PRODUCT
+    // ============================================
+
     const product = await Product.findById(productId);
+
     if (!product) {
       return res.status(404).json({
         error: 'Product not found'
       });
     }
+
+    // ============================================
+    // BASE PRODUCT PRICE
+    // ============================================
+
     const basePrice = Number(product.price);
-    const baseCurrency = product.currency || 'USD';
+
+    const baseCurrency =
+      String(product.currency || 'USD').toUpperCase();
+
     if (!Number.isFinite(basePrice) || basePrice <= 0) {
       return res.status(400).json({
         error: 'Invalid product price'
       });
     }
-    // Default payment method
-    const method = paymentMethod || 'mobile_money';
+
     // ============================================
-    // MOBILE MONEY
+    // GEOSMART PRICE
     // ============================================
-    //
-    // Mobile money such as M-Pesa should remain in
-    // its supported local currency (KES).
-    //
-    if (method === 'mobile_money') {
-      if (!phone) {
-        return res.status(400).json({
-          error: 'Phone number is required for mobile money'
-        });
-      }
-      const mobileMoneyCurrency = 'KES';
-      let amount = basePrice;
-      // If product is stored in another base currency,
-      // convert it to KES before sending to M-Pesa.
-      if (baseCurrency !== mobileMoneyCurrency) {
-        const fxResponse = await fetch(
-          `https://api.frankfurter.app/latest?amount=${basePrice}&from=${baseCurrency}&to=KES`
-        );
-        if (!fxResponse.ok) {
-          throw new Error('KES currency conversion failed');
-        }
-        const fxData = await fxResponse.json();
-        amount = fxData.rates?.KES;
-        if (!amount) {
-          throw new Error('Unable to calculate KES price');
-        }
-      }
-      amount = Math.round(amount);
-      const result = await triggerUniversalPush(
-        phone,
-        amount,
-        productId,
-        'product_purchase'
-      );
-      return res.json({
-        success: true,
-        paymentMethod: 'mobile_money',
-        currency: 'KES',
-        amount,
-        productId,
-        result
+
+    const requestedCurrency =
+      String(currency || baseCurrency).toUpperCase();
+
+    const requestedAmount =
+      amount !== undefined &&
+      amount !== null
+        ? Number(amount)
+        : null;
+
+    const requestedCountry =
+      String(country || 'US').toUpperCase();
+
+    console.log('🌍 GEOSMART PURCHASE');
+
+    console.log({
+      productId,
+      country: requestedCountry,
+      currency: requestedCurrency,
+      amount: requestedAmount,
+      paymentMethod,
+      paymentType
+    });
+
+    // ============================================
+    // VALIDATE GEOSMART AMOUNT
+    // ============================================
+
+    if (
+      requestedAmount !== null &&
+      (
+        !Number.isFinite(requestedAmount) ||
+        requestedAmount <= 0
+      )
+    ) {
+      return res.status(400).json({
+        error: 'Invalid GeoSmart amount'
       });
     }
+
     // ============================================
-    // STRIPE
+    // FINAL DISPLAY PRICE
     // ============================================
-    if (method === 'stripe') {
-      const stripeCurrency = currency || 'USD';
-      let amount = basePrice;
-      // Convert product price to requested Stripe currency
-      if (baseCurrency !== stripeCurrency) {
+
+    /*
+     * If GeoSmart supplied an amount,
+     * that amount is the localized customer price.
+     *
+     * DO NOT recalculate or replace it here.
+     */
+
+    const finalAmount =
+      requestedAmount !== null
+        ? requestedAmount
+        : basePrice;
+
+    // ============================================
+    // PAYMENT METHOD
+    // ============================================
+
+    const method =
+      String(paymentMethod || 'mobile_money').toLowerCase();
+
+    // ============================================
+    // MOBILE MONEY / M-PESA
+    // ============================================
+
+    if (method === 'mobile_money') {
+
+      if (!phone) {
+        return res.status(400).json({
+          error:
+            'Phone number is required for mobile money'
+        });
+      }
+
+      /*
+       * M-Pesa settles in KES.
+       *
+       * GeoSmart pricing remains the customer's
+       * display price. Conversion to KES happens
+       * ONLY at the payment gateway stage.
+       */
+
+      const mobileMoneyCurrency = 'KES';
+
+      let mpesaAmount;
+
+      if (requestedCurrency === 'KES') {
+
+        mpesaAmount = finalAmount;
+
+      } else {
+
         const fxResponse = await fetch(
-          `https://api.frankfurter.app/latest?amount=${basePrice}&from=${baseCurrency}&to=${stripeCurrency}`
+          `https://api.frankfurter.app/latest?amount=${finalAmount}&from=${requestedCurrency}&to=KES`
         );
+
         if (!fxResponse.ok) {
-          throw new Error('Currency conversion failed');
-        }
-        const fxData = await fxResponse.json();
-        amount = fxData.rates?.[stripeCurrency];
-        if (!amount) {
           throw new Error(
-            `Unable to convert price to ${stripeCurrency}`
+            `Unable to convert ${requestedCurrency} to KES`
+          );
+        }
+
+        const fxData =
+          await fxResponse.json();
+
+        mpesaAmount =
+          fxData.rates?.KES;
+
+        if (
+          !Number.isFinite(mpesaAmount) ||
+          mpesaAmount <= 0
+        ) {
+          throw new Error(
+            'Unable to calculate KES payment amount'
           );
         }
       }
-      amount = Number(amount.toFixed(2));
+
+      mpesaAmount =
+        Math.round(mpesaAmount);
+
+      const result =
+        await triggerUniversalPush(
+          phone,
+          mpesaAmount,
+          productId,
+          paymentType || 'product_purchase'
+        );
+
+      return res.json({
+
+        success: true,
+
+        paymentMethod:
+          'mobile_money',
+
+        // Gateway settlement currency
+        currency:
+          mobileMoneyCurrency,
+
+        // Amount actually sent to M-Pesa
+        amount:
+          mpesaAmount,
+
+        // Original GeoSmart customer price
+        displayCurrency:
+          requestedCurrency,
+
+        displayAmount:
+          finalAmount,
+
+        country:
+          requestedCountry,
+
+        productId,
+
+        paymentType:
+          paymentType || 'product_purchase',
+
+        result
+      });
+    }
+
+    // ============================================
+    // STRIPE
+    // ============================================
+
+    if (method === 'stripe') {
+
+      const stripeCurrency =
+        requestedCurrency.toUpperCase();
+
+      if (!stripeCurrency) {
+        return res.status(400).json({
+          error:
+            'GeoSmart currency is required for Stripe'
+        });
+      }
+
       /*
-       * IMPORTANT:
-       * Stripe expects the smallest currency unit.
+       * GeoSmart has already supplied the
+       * localized price.
        *
-       * Example:
-       * $10.50 -> 1050 cents
+       * Stripe receives that exact price.
        */
+
+      const stripeDisplayAmount =
+        Number(finalAmount.toFixed(2));
+
+      if (
+        !Number.isFinite(stripeDisplayAmount) ||
+        stripeDisplayAmount <= 0
+      ) {
+        return res.status(400).json({
+          error:
+            'Invalid Stripe amount'
+        });
+      }
+
+      // ==========================================
+      // STRIPE ZERO-DECIMAL CURRENCIES
+      // ==========================================
+
       const zeroDecimalCurrencies = [
+
         'BIF',
         'CLP',
         'DJF',
@@ -8512,65 +8667,156 @@ app.post('/api/products/:id/purchase', async (req, res) => {
         'XAF',
         'XOF',
         'XPF'
+
       ];
-      const stripeAmount = zeroDecimalCurrencies.includes(
-        stripeCurrency.toUpperCase()
-      )
-        ? Math.round(amount)
-        : Math.round(amount * 100);
-      // Create Stripe Checkout Session
-      const session = await stripe.checkout.sessions.create({
-        mode: 'payment',
-        line_items: [
-          {
-            price_data: {
-              currency: stripeCurrency.toLowerCase(),
-              product_data: {
-                name: product.name,
-                description:
-                  product.description || 'INFLUENSA digital product'
+
+      const stripeAmount =
+        zeroDecimalCurrencies.includes(
+          stripeCurrency
+        )
+          ? Math.round(
+              stripeDisplayAmount
+            )
+          : Math.round(
+              stripeDisplayAmount * 100
+            );
+
+      // ==========================================
+      // CREATE STRIPE CHECKOUT SESSION
+      // ==========================================
+
+      const session =
+        await stripe.checkout.sessions.create({
+
+          mode: 'payment',
+
+          line_items: [
+
+            {
+              price_data: {
+
+                currency:
+                  stripeCurrency.toLowerCase(),
+
+                product_data: {
+
+                  name:
+                    product.name,
+
+                  description:
+                    product.description ||
+                    'INFLUENSA digital product'
+
+                },
+
+                unit_amount:
+                  stripeAmount
+
               },
-              unit_amount: stripeAmount
-            },
-            quantity: 1
-          }
-        ],
-        metadata: {
-          productId: productId.toString(),
-          paymentType: 'product_purchase',
-          baseCurrency,
-          basePrice: basePrice.toString(),
-          displayCurrency: stripeCurrency,
-          displayAmount: amount.toString()
-        },
-        success_url:
-          `${process.env.FRONTEND_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url:
-          `${process.env.FRONTEND_URL}/payment/cancelled`
-      });
+
+              quantity: 1
+
+            }
+
+          ],
+
+          metadata: {
+
+            productId:
+              productId.toString(),
+
+            paymentType:
+              paymentType ||
+              'product_purchase',
+
+            country:
+              requestedCountry,
+
+            baseCurrency:
+              baseCurrency,
+
+            basePrice:
+              basePrice.toString(),
+
+            displayCurrency:
+              stripeCurrency,
+
+            displayAmount:
+              stripeDisplayAmount.toString()
+
+          },
+
+          success_url:
+            `${process.env.FRONTEND_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+
+          cancel_url:
+            `${process.env.FRONTEND_URL}/payment/cancelled`
+
+        });
+
       return res.json({
+
         success: true,
-        paymentMethod: 'stripe',
-        currency: stripeCurrency,
-        amount,
+
+        paymentMethod:
+          'stripe',
+
+        currency:
+          stripeCurrency,
+
+        amount:
+          stripeDisplayAmount,
+
+        country:
+          requestedCountry,
+
         productId,
-        checkoutUrl: session.url,
-        sessionId: session.id
+
+        paymentType:
+          paymentType ||
+          'product_purchase',
+
+        checkoutUrl:
+          session.url,
+
+        sessionId:
+          session.id
+
       });
     }
+
     // ============================================
     // INVALID PAYMENT METHOD
     // ============================================
+
     return res.status(400).json({
-      error: 'Unsupported payment method'
+
+      error:
+        'Unsupported payment method'
+
     });
-  } catch (error) {
-    console.error('GeoSmart product purchase error:', error);
-    return res.status(500).json({
-      error: 'Unable to process purchase',
-      details: error.message
-    });
+
   }
+
+  catch (error) {
+
+    console.error(
+      'GeoSmart product purchase error:',
+      error
+    );
+
+    return res.status(500).json({
+
+      error:
+        'Unable to process purchase',
+
+      details:
+        error.message
+
+    });
+
+  }
+
 });
 // =========================================================================
 // TVWS SPECTRUM & NETWORK MANAGEMENT ROUTES
