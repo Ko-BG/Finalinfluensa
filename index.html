@@ -3343,52 +3343,130 @@ async function buyProduct(productId, paymentMethod) {
     return;
   }
 }
-function showPurchaseOptions(productId, price) {
-  // Use your existing country detection
-  const country = (typeof getUserCountry === 'function' ? getUserCountry() : null) 
-               || window.userCountry 
-               || 'KE';
+function showPurchaseOptions(productId, geoPrice) {
+  if (!geoPrice) {
+    console.error('GeoSmart price is missing');
+    return;
+  }
 
-  // Currency
-  
-  const currency = currencies[country] || currencies['KE'];
+  const amount = Number(geoPrice.amount);
+  const currencyCode = geoPrice.currency;
+  const country = geoPrice.country;
 
-  // Button rules
-  const showDelivery = ['KE', 'TZ', 'UG', 'RW'].includes(country);
+  // Currency information
+  const currency = currencies[country] || {
+    code: currencyCode,
+    symbol: currencyCode
+  };
+
+  // Local payment options
+  const localMobileMoneyCountries = ['KE', 'TZ', 'UG', 'RW'];
+  const showDelivery = localMobileMoneyCountries.includes(country);
+
+  // Payment-plan availability
   const showPlan = true;
 
+  // Full-payment label
+  const fullPaymentLabel =
+    country === 'KE'
+      ? 'Pay Full Now — M-Pesa'
+      : `Pay Full Now — ${currencyCode}`;
+
   const deliveryButton = showDelivery ? `
-    <button onclick="initiatePayment('${productId}', ${price}, 'delivery')" 
-            class="w-full py-4 bg-white/10 text-white font-bold rounded-xl border border-white/30">
-      Buy on Delivery
-    </button>` : '';
+    <button
+      onclick="initiatePayment(
+        '${productId}',
+        ${amount},
+        'delivery',
+        '${currencyCode}',
+        '${country}'
+      )"
+      class="w-full py-4 bg-white/10 text-white font-bold rounded-xl border border-white/30">
+
+      📦 Buy on Delivery
+      <span class="block text-sm font-normal opacity-70">
+        Pay on receipt
+      </span>
+
+    </button>
+  ` : '';
 
   const planButton = showPlan ? `
-    <button onclick="initiatePayment('${productId}', ${price}, 'plan')" 
-            class="w-full py-4 bg-emerald-500 text-black font-bold rounded-xl">
-      3-Month Payment Plan
-    </button>` : '';
+    <button
+      onclick="initiatePayment(
+        '${productId}',
+        ${amount},
+        'plan',
+        '${currencyCode}',
+        '${country}'
+      )"
+      class="w-full py-4 bg-emerald-500 text-black font-bold rounded-xl">
+
+      📅 3-Month Payment Plan
+      <span class="block text-sm font-normal opacity-70">
+        ${currency.symbol}${Number(amount / 3).toLocaleString()} × 3
+      </span>
+
+    </button>
+  ` : '';
 
   const modalHTML = `
-    <div id="purchase-modal" class="fixed inset-0 bg-black/95 backdrop-blur-2xl flex items-center justify-center z-[200]">
+    <div
+      id="purchase-modal"
+      class="fixed inset-0 bg-black/95 backdrop-blur-2xl
+             flex items-center justify-center z-[200]">
+
       <div class="glass p-8 w-full max-w-md rounded-3xl">
-        <h3 class="text-2xl font-bold text-yellow-400 mb-6">Purchase Options</h3>
-        
-        <div class="space-y-4">
-          <button onclick="initiatePayment('${productId}', ${price}, 'full')" 
-                  class="w-full py-4 bg-yellow-500 text-black font-bold rounded-xl">
-            Pay Full Now (${currency.symbol} ${Number(price).toLocaleString()})
-          </button>
-          
-          ${deliveryButton}
-          
-          ${planButton}
+
+        <h3 class="text-2xl font-bold text-yellow-400 mb-3">
+          Choose Payment Option
+        </h3>
+
+        <div class="text-center text-xl font-semibold text-white mb-6">
+          ${geoPrice.formatted}
         </div>
-        
-        <button onclick="closePurchaseModal()" class="mt-6 w-full py-3 text-slate-400">Cancel</button>
+
+        <div class="space-y-4">
+
+          <!-- FULL PAYMENT -->
+          <button
+            onclick="initiatePayment(
+              '${productId}',
+              ${amount},
+              'full',
+              '${currencyCode}',
+              '${country}'
+            )"
+            class="w-full py-4 bg-yellow-500 text-black font-bold rounded-xl">
+
+            💳 ${fullPaymentLabel}
+
+          </button>
+
+          <!-- DELIVERY -->
+          ${deliveryButton}
+
+          <!-- PAYMENT PLAN -->
+          ${planButton}
+
+        </div>
+
+        <button
+          onclick="closePurchaseModal()"
+          class="mt-6 w-full py-3 text-slate-400">
+
+          Cancel
+
+        </button>
+
+        <div class="mt-5 text-center text-xs text-slate-500">
+          Secured by INFLUENSA • GeoSmart
+        </div>
+
       </div>
-    </div>`;
-  
+    </div>
+  `;
+
   document.body.insertAdjacentHTML('beforeend', modalHTML);
 }
 
