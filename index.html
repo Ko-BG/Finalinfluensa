@@ -3496,36 +3496,41 @@ function showPurchaseOptions(productId, geoPrice) {
 
   console.log("🌍 GeoSmart price received:", geoPrice);
 
-  // -----------------------------
+  // --------------------------------
   // VALIDATE GEOSMART PRICE
-  // -----------------------------
+  // --------------------------------
   if (
     !geoPrice ||
     geoPrice.amount === undefined ||
     geoPrice.amount === null ||
     !geoPrice.currency
   ) {
-    console.error(
-      "❌ Invalid GeoSmart price:",
-      geoPrice
-    );
-
+    console.error("❌ Invalid GeoSmart price:", geoPrice);
     alert("Unable to determine the correct price.");
     return;
   }
 
   const amount = Number(geoPrice.amount);
-  const currencyCode = String(geoPrice.currency).toUpperCase();
 
-  const country = String(
-    geoPrice.country ||
-    window.userCountry ||
-    "US"
-  ).toUpperCase();
+  if (!Number.isFinite(amount) || amount <= 0) {
+    console.error("❌ Invalid GeoSmart amount:", amount);
+    alert("Invalid product price.");
+    return;
+  }
 
-  // -----------------------------
-  // FORMAT PRICE
-  // -----------------------------
+  const currencyCode =
+    String(geoPrice.currency).toUpperCase();
+
+  const country =
+    String(
+      geoPrice.country ||
+      window.userCountry ||
+      "US"
+    ).toUpperCase();
+
+  // --------------------------------
+  // FORMATTER
+  // --------------------------------
   const formatter = new Intl.NumberFormat(
     geoPrice.locale || undefined,
     {
@@ -3535,7 +3540,6 @@ function showPurchaseOptions(productId, geoPrice) {
   );
 
   const formattedPrice =
-    geoPrice.formatted ||
     formatter.format(amount);
 
   const installmentPrice =
@@ -3546,9 +3550,21 @@ function showPurchaseOptions(productId, geoPrice) {
   console.log("💱 GeoSmart currency:", currencyCode);
   console.log("💵 Display price:", formattedPrice);
 
-  // -----------------------------
+  // --------------------------------
+  // CREATE GEO PRICE OBJECT
+  // --------------------------------
+  const geoPriceJSON = JSON.stringify({
+    amount: amount,
+    currency: currencyCode,
+    country: country,
+    formatted: formattedPrice
+  })
+    .replace(/\\/g, "\\\\")
+    .replace(/'/g, "\\'");
+
+  // --------------------------------
   // DELIVERY
-  // -----------------------------
+  // --------------------------------
   const showDelivery = [
     "KE",
     "TZ",
@@ -3556,40 +3572,54 @@ function showPurchaseOptions(productId, geoPrice) {
     "RW"
   ].includes(country);
 
-  const deliveryButton = showDelivery ? `
-    <button
-      onclick="initiatePurchase(
-  '${productId}',
-  {
-    amount: ${amount},
-    currency: '${currencyCode}',
-    country: '${country}',
-    formatted: '${formattedPrice}'
-  },
-  'delivery'
-)"
+  const deliveryButton = showDelivery
+    ? `
+      <button
+        type="button"
+        onclick='initiatePurchase(
+          "${productId}",
+          ${JSON.stringify({
+            amount: amount,
+            currency: currencyCode,
+            country: country,
+            formatted: formattedPrice
+          })},
+          "delivery"
+        )"
+        class="w-full py-4 bg-white/10 hover:bg-white/20
+               text-white font-bold rounded-xl">
 
-      <span class="block text-sm opacity-70">
-        Pay on receipt
-      </span>
+        📦 Buy on Delivery
 
-    </button>
-  ` : "";
+        <span class="block text-sm opacity-70">
+          Pay on receipt
+        </span>
 
-  // -----------------------------
+      </button>
+    `
+    : "";
+
+  // --------------------------------
   // PAYMENT PLAN
-  // -----------------------------
+  // --------------------------------
   const planButton = `
     <button
-      onclick="initiatePurchase(
-  '${productId}',
-  {
-    amount: ${amount},
-    currency: '${currencyCode}',
-    country: '${country}'
-  },
-  'plan'
-)"
+      type="button"
+      onclick='initiatePurchase(
+        "${productId}",
+        ${JSON.stringify({
+          amount: amount,
+          currency: currencyCode,
+          country: country,
+          formatted: formattedPrice
+        })},
+        "plan"
+      )'
+      class="w-full py-4 bg-emerald-500
+             hover:bg-emerald-400 text-black
+             font-bold rounded-xl">
+
+      📅 3-Month Payment Plan
 
       <span class="block text-sm opacity-70">
         ${installmentPrice} × 3
@@ -3598,51 +3628,71 @@ function showPurchaseOptions(productId, geoPrice) {
     </button>
   `;
 
-  // -----------------------------
+  // --------------------------------
+  // FULL PAYMENT
+  // --------------------------------
+  const fullButton = `
+    <button
+      type="button"
+      onclick='initiatePurchase(
+        "${productId}",
+        ${JSON.stringify({
+          amount: amount,
+          currency: currencyCode,
+          country: country,
+          formatted: formattedPrice
+        })},
+        "full"
+      )'
+      class="w-full py-4 bg-yellow-500
+             hover:bg-yellow-400 text-black
+             font-bold rounded-xl">
+
+      💳 Pay Full Now
+
+      <span class="block text-sm opacity-70">
+        ${formattedPrice}
+      </span>
+
+    </button>
+  `;
+
+  // --------------------------------
   // MODAL
-  // -----------------------------
+  // --------------------------------
   const modalHTML = `
     <div
       id="purchase-modal"
       class="fixed inset-0 bg-black/95 backdrop-blur-2xl
              flex items-center justify-center z-[200]">
 
-      <div class="glass p-8 w-full max-w-md rounded-3xl">
+      <div
+        class="glass p-8 w-full max-w-md rounded-3xl">
 
-        <h3 class="text-2xl font-bold text-yellow-400 mb-3">
+        <h3
+          class="text-2xl font-bold text-yellow-400 mb-3">
           Choose Payment Option
         </h3>
 
-        <div class="text-center text-2xl font-bold text-white mb-6">
+        <div
+          class="text-center text-2xl font-bold text-white mb-6">
+
           ${formattedPrice}
+
         </div>
 
         <div class="space-y-4">
 
-          <!-- PAY FULL -->
-          <button
-        onclick="initiatePurchase(
-  '${productId}',
-  {
-    amount: ${amount},
-    currency: '${currencyCode}',
-    country: '${country}',
-    formatted: '${formattedPrice}'
-  },
-  'full'
-)"
+          ${fullButton}
 
-          </button>
-
-          <!-- DELIVERY -->
           ${deliveryButton}
 
-          <!-- PAYMENT PLAN -->
           ${planButton}
 
         </div>
 
         <button
+          type="button"
           onclick="closePurchaseModal()"
           class="mt-6 w-full py-3 text-slate-400">
 
@@ -3650,8 +3700,11 @@ function showPurchaseOptions(productId, geoPrice) {
 
         </button>
 
-        <div class="mt-5 text-center text-xs text-slate-500">
+        <div
+          class="mt-5 text-center text-xs text-slate-500">
+
           Secured by INFLUENSA • GeoSmart
+
         </div>
 
       </div>
@@ -3659,7 +3712,9 @@ function showPurchaseOptions(productId, geoPrice) {
     </div>
   `;
 
-  // Remove existing modal first
+  // --------------------------------
+  // REMOVE OLD MODAL
+  // --------------------------------
   const existingModal =
     document.getElementById("purchase-modal");
 
@@ -3667,6 +3722,9 @@ function showPurchaseOptions(productId, geoPrice) {
     existingModal.remove();
   }
 
+  // --------------------------------
+  // INSERT NEW MODAL
+  // --------------------------------
   document.body.insertAdjacentHTML(
     "beforeend",
     modalHTML
