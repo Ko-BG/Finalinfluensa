@@ -3292,124 +3292,155 @@ async function loadEcomProducts() {
   }
 }
 async function renderEcomProducts(products) {
-  const container = document.getElementById('ecomContainer');
+  const container = document.getElementById("ecomContainer");
   if (!container) return;
 
-  // DO NOT reset userCurrency to KES here.
-  // GeoSmart must provide the currency.
-  if (!userCurrency || !userCurrency.code) {
-    console.error('❌ GeoSmart currency is not loaded:', userCurrency);
+  // Validate GeoSmart currency context
+  if (!window.userCurrency || !window.userCurrency.code) {
+    console.error("❌ GeoSmart currency is not loaded:", window.userCurrency);
 
     container.innerHTML = `
       <div class="col-span-full py-12 text-center text-red-400">
         Unable to determine regional currency.
       </div>
     `;
-
     return;
   }
 
-  const currencyCode = userCurrency.code;
-  const rate = Number(userCurrency.rate) || 1;
+  const currencyCode = window.userCurrency.code;
+  const rate = Number(window.userCurrency.rate) || 1;
+  const country = window.userCountry || "KE";
 
-  console.log('💱 RENDERING ECOM WITH GEOSMART:', {
+  console.log("💱 RENDERING ECOM WITH GEOSMART:", {
     currency: currencyCode,
-    rate: rate
+    rate: rate,
+    country: country
   });
 
-  container.innerHTML = products.map(p => {
+  if (!Array.isArray(products) || products.length === 0) {
+    container.innerHTML = `
+      <div class="col-span-full py-12 text-center text-slate-400">
+        No products available.
+      </div>
+    `;
+    return;
+  }
 
-    const basePrice = Number(p.price) || 0;
+  // --------------------------------
+  // 1. GENERATE CARD HTML
+  // --------------------------------
+  container.innerHTML = products
+    .map((p) => {
+      const basePrice = Number(p.price) || 0;
+      const geoAmount = basePrice * rate;
 
-    // GeoSmart converted amount
-    const geoAmount = basePrice * rate;
+      // Use system formatter for price display
+      const formattedPrice =
+        typeof formatPrice === "function"
+          ? formatPrice(basePrice)
+          : `${currencyCode} ${geoAmount.toFixed(2)}`;
 
-    // Use your existing formatter
-    const formattedPrice = formatPrice(basePrice);
+      // Resolve primary image source
+      const imageSrc =
+        p.images && p.images.length > 0
+          ? `/uploads/${p.images[0]}`
+          : p.image || "/uploads/default-product.jpg";
 
-    return `
-      <div class="glass product-card overflow-hidden flex flex-col h-full">
+      const extraImagesCount =
+        p.images && p.images.length > 1 ? p.images.length - 1 : 0;
 
-        <div class="h-64 bg-black relative">
+      return `
+        <div class="glass product-card overflow-hidden flex flex-col h-full">
 
-          <img
-            src="${
-              p.images && p.images.length > 0
-                ? '/uploads/' + p.images[0]
-                : (p.image || '/uploads/default-product.jpg')
-            }"
-            class="w-full h-full object-cover"
-          >
+          <div class="h-64 bg-black relative">
+            <img
+              src="${imageSrc}"
+              alt="${p.name || "Product"}"
+              class="w-full h-full object-cover"
+            />
 
-          ${
-            p.stock > 0
-              ? `
-                <div class="absolute top-4 right-4 bg-green-500 text-black text-xs px-3 py-1 rounded-full font-bold">
-                  IN STOCK
+            ${
+              p.stock > 0
+                ? `
+                  <div class="absolute top-4 right-4 bg-green-500 text-black text-xs px-3 py-1 rounded-full font-bold">
+                    IN STOCK
+                  </div>
+                `
+                : ""
+            }
+
+            ${
+              extraImagesCount > 0
+                ? `
+                  <div class="absolute bottom-4 left-4 bg-black/70 text-white text-[10px] px-2 py-0.5 rounded-full font-mono">
+                    +${extraImagesCount}
+                  </div>
+                `
+                : ""
+            }
+          </div>
+
+          <div class="p-6 flex-1 flex flex-col">
+            <h4 class="text-xl font-bold">
+              ${p.name || "Unnamed Product"}
+            </h4>
+
+            <p class="text-sm text-slate-400 mt-1 line-clamp-2">
+              ${p.description || ""}
+            </p>
+
+            <div class="mt-auto pt-6">
+              <div class="flex justify-between items-end">
+                <div>
+                  <span class="text-2xl font-bold text-yellow-400">
+                    ${formattedPrice}
+                  </span>
                 </div>
-              `
-              : ''
-          }
 
-          ${
-            p.images && p.images.length > 1
-              ? `
-                <div class="absolute bottom-4 left-4 bg-black/70 text-white text-[10px] px-2 py-0.5 rounded-full font-mono">
-                  +${p.images.length - 1}
-                </div>
-              `
-              : ''
-          }
-
-        </div>
-
-        <div class="p-6 flex-1 flex flex-col">
-
-          <h4 class="text-xl font-bold">
-            ${p.name}
-          </h4>
-
-          <p class="text-sm text-slate-400 mt-1 line-clamp-2">
-            ${p.description || ''}
-          </p>
-
-          <div class="mt-auto pt-6">
-
-            <div class="flex justify-between items-end">
-
-              <div>
-                <span class="text-2xl font-bold text-yellow-400">
-                  ${formattedPrice}
-                </span>
+                <button
+                  type="button"
+                  class="purchase-trigger-btn bg-yellow-500 hover:bg-yellow-400 text-black px-6 py-3 rounded-xl font-black text-sm uppercase tracking-widest btn-glow transition-colors"
+                  data-product-id="${p._id}"
+                  data-geo-amount="${geoAmount}"
+                  data-currency="${currencyCode}"
+                  data-country="${country}"
+                  data-formatted-price="${formattedPrice}">
+                  PURCHASE
+                </button>
               </div>
-
-              <button
-                onclick='showPurchaseOptions(
-                  "${p._id}",
-                  {
-                    amount: ${geoAmount},
-                    currency: "${currencyCode}",
-                    country: "${window.userCountry || "KE"}",
-                    formatted: "${formattedPrice}"
-                  }
-                )'
-                class="bg-yellow-500 hover:bg-yellow-400 text-black px-6 py-3 rounded-xl font-black text-sm uppercase tracking-widest btn-glow">
-
-                PURCHASE
-
-              </button>
-
             </div>
-
           </div>
 
         </div>
+      `;
+    })
+    .join("");
 
-      </div>
-    `;
-  }).join('');
+  // --------------------------------
+  // 2. ATTACH CLICK LISTENERS
+  // --------------------------------
+  container.querySelectorAll(".purchase-trigger-btn").forEach((button) => {
+    button.addEventListener("click", () => {
+      const productId = button.dataset.productId;
+
+      const geoPriceObj = {
+        amount: Number(button.dataset.geoAmount),
+        currency: button.dataset.currency,
+        country: button.dataset.country,
+        formatted: button.dataset.formattedPrice,
+      };
+
+      if (typeof showPurchaseOptions === "function") {
+        showPurchaseOptions(productId, geoPriceObj);
+      } else {
+        console.error("❌ showPurchaseOptions function is not defined.");
+      }
+    });
+  });
+
+  console.log("✅ PRODUCTS RENDERED & EVENT LISTENERS ATTACHED");
 }
- 
+
   
 function updateProductImagesName() {
     const files = document.getElementById("productImages").files;
