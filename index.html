@@ -3253,42 +3253,236 @@ async function loadEcomProducts() {
   }
 }
 
-function renderEcomProducts(products) {
-  const container = document.getElementById('ecomContainer');
-  container.innerHTML = products.map(p => `
-    <div class="glass product-card overflow-hidden flex flex-col h-full">
-      <div class="h-64 bg-black relative">
-        <!-- Show first image or fallback -->
-        <img src="${(p.images && p.images.length > 0) ? '/uploads/' + p.images[0] : (p.image || '/uploads/default-product.jpg')}" 
-             class="w-full h-full object-cover">
-        
-        ${p.stock > 0 ? `<div class="absolute top-4 right-4 bg-green-500 text-black text-xs px-3 py-1 rounded-full font-bold">IN STOCK</div>` : ''}
-        
-        <!-- Image counter badge -->
-        ${p.images && p.images.length > 1 ? 
-          `<div class="absolute bottom-4 left-4 bg-black/70 text-white text-[10px] px-2 py-0.5 rounded-full font-mono">
-            +${p.images.length - 1}
-          </div>` : ''}
-      </div>
-      
-      <div class="p-6 flex-1 flex flex-col">
-        <h4 class="text-xl font-bold">${p.name}</h4>
-        <p class="text-sm text-slate-400 mt-1 line-clamp-2">${p.description}</p>
-        
-        <div class="mt-auto pt-6">
-          <div class="flex justify-between items-end">
-            <div>
-       <span class="text-2xl font-bold text-yellow-400">${formatPrice(p.price)}</span>
-            </div>
-            <button onclick="showPurchaseOptions('${p._id}', ${p.price})" 
-              class="bg-yellow-500 hover:bg-yellow-400 text-black px-6 py-3 rounded-xl font-black text-sm uppercase tracking-widest btn-glow">
-              PURCHASE
-            </button>
+async function renderEcomProducts(products) {
+
+  const container =
+    document.getElementById('ecomContainer');
+
+  if (!container) {
+    console.error('ecomContainer not found');
+    return;
+  }
+
+  // ============================================
+  // LOAD PRODUCTS WITH GEOSMART PRICES
+  // ============================================
+
+  const productsWithGeoPrices =
+    await Promise.all(
+
+      products.map(async (p) => {
+
+        try {
+
+          /*
+           * IMPORTANT:
+           * Replace getGeoSmartPrice() below with the
+           * actual GeoSmart pricing function you already
+           * use in your application.
+           */
+
+          const geoPrice =
+            await getGeoSmartPrice(
+              p.price,
+              p.currency || 'USD',
+              p._id
+            );
+
+          return {
+            ...p,
+            geoPrice
+          };
+
+        } catch (error) {
+
+          console.error(
+            'GeoSmart pricing failed for product:',
+            p._id,
+            error
+          );
+
+          return {
+            ...p,
+            geoPrice: null
+          };
+        }
+
+      })
+
+    );
+
+  // ============================================
+  // RENDER PRODUCTS
+  // ============================================
+
+  container.innerHTML =
+    productsWithGeoPrices.map(p => {
+
+      const geoPrice = p.geoPrice;
+
+      /*
+       * If GeoSmart failed, fall back to the
+       * original product price.
+       */
+
+      const displayAmount =
+        geoPrice &&
+        Number.isFinite(Number(geoPrice.amount))
+          ? Number(geoPrice.amount)
+          : Number(p.price);
+
+      const displayCurrency =
+        geoPrice &&
+        geoPrice.currency
+          ? String(geoPrice.currency).toUpperCase()
+          : String(p.currency || 'KES').toUpperCase();
+
+      const displayFormatted =
+        geoPrice &&
+        geoPrice.formatted
+          ? geoPrice.formatted
+          : new Intl.NumberFormat(
+              geoPrice?.locale || undefined,
+              {
+                style: 'currency',
+                currency: displayCurrency
+              }
+            ).format(displayAmount);
+
+      const country =
+        geoPrice?.country ||
+        window.userCountry ||
+        'US';
+
+      return `
+
+        <div class="glass product-card overflow-hidden flex flex-col h-full">
+
+          <!-- =====================================
+               PRODUCT IMAGE
+          ====================================== -->
+
+          <div class="h-64 bg-black relative">
+
+            <img
+              src="${
+                p.images && p.images.length > 0
+                  ? '/uploads/' + p.images[0]
+                  : (p.image || '/uploads/default-product.jpg')
+              }"
+              class="w-full h-full object-cover"
+              alt="${p.name || 'Product'}"
+            >
+
+            ${
+              p.stock > 0
+                ? `
+                  <div class="absolute top-4 right-4
+                              bg-green-500 text-black
+                              text-xs px-3 py-1
+                              rounded-full font-bold">
+
+                    IN STOCK
+
+                  </div>
+                `
+                : ''
+            }
+
+            ${
+              p.images && p.images.length > 1
+                ? `
+                  <div class="absolute bottom-4 left-4
+                              bg-black/70 text-white
+                              text-[10px] px-2 py-0.5
+                              rounded-full font-mono">
+
+                    +${p.images.length - 1}
+
+                  </div>
+                `
+                : ''
+            }
+
           </div>
+
+
+          <!-- =====================================
+               PRODUCT INFORMATION
+          ====================================== -->
+
+          <div class="p-6 flex-1 flex flex-col">
+
+            <h4 class="text-xl font-bold">
+              ${p.name}
+            </h4>
+
+            <p class="text-sm text-slate-400 mt-1 line-clamp-2">
+              ${p.description || ''}
+            </p>
+
+
+            <!-- ===================================
+                 PRICE
+            ==================================== -->
+
+            <div class="mt-auto pt-6">
+
+              <div class="flex justify-between items-end">
+
+                <div>
+
+                  <span
+                    class="text-2xl font-bold text-yellow-400"
+                  >
+                    ${displayFormatted}
+                  </span>
+
+                </div>
+
+
+                <!-- =================================
+                     PURCHASE BUTTON
+                ================================== -->
+
+                <button
+                  onclick='showPurchaseOptions(
+                    ${JSON.stringify(p._id)},
+                    ${JSON.stringify({
+                      amount: displayAmount,
+                      currency: displayCurrency,
+                      country: country,
+                      formatted: displayFormatted,
+                      locale: geoPrice?.locale || undefined
+                    })}
+                  )'
+                  class="bg-yellow-500
+                         hover:bg-yellow-400
+                         text-black
+                         px-6 py-3
+                         rounded-xl
+                         font-black
+                         text-sm
+                         uppercase
+                         tracking-widest
+                         btn-glow"
+                >
+
+                  PURCHASE
+
+                </button>
+
+              </div>
+
+            </div>
+
+          </div>
+
         </div>
-      </div>
-    </div>
-  `).join('');
+
+      `;
+
+    }).join('');
 }
 function updateProductImagesName() {
     const files = document.getElementById("productImages").files;
