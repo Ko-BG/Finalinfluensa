@@ -3310,12 +3310,61 @@ async function initiatePayment(productId, price, type) {
 }
 
 async function buyProduct(productId) {
+
   const product = allEcomProducts.find(p => p._id === productId);
-  if (!product) return;
-  
-  if (confirm(`Purchase ${product.name} for KES ${product.price}?`)) {
-    await unlockIP(productId, 'product_purchase'); // Reuses your existing payment flow
+
+  if (!product) {
+
+    alert('Product not found.');
+
+    return;
+
   }
+
+  try {
+
+    // Get price in the user's local currency
+
+    const geoPrice = await getGeoSmartPrice(
+
+      product.price,
+
+      product.currency || 'USD'
+
+    );
+
+    // GeoSmart purchase confirmation
+
+    if (
+
+      confirm(
+
+        `Purchase ${product.name} for ${geoPrice.formatted}?`
+
+      )
+
+    ) {
+
+      // Pass the GeoSmart currency information into payment
+
+      await unlockIP(productId, 'product_purchase', {
+
+        amount: geoPrice.amount,
+
+        currency: geoPrice.currency
+
+      });
+
+    }
+
+  } catch (error) {
+
+    console.error('GeoSmart purchase error:', error);
+
+    alert('Unable to process this purchase. Please try again.');
+
+  }
+
 }
 function showPurchaseOptions(productId, price) {
   // Use your existing country detection
