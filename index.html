@@ -3303,45 +3303,222 @@ function updateProductImagesName() {
 
 
 
-async function initiatePayment(productId, price, type) {
+// ============================================
+// INITIATE PAYMENT
+// ============================================
+
+async function initiatePayment(
+  productId,
+  amount,
+  type,
+  currency,
+  country
+) {
+
   closePurchaseModal();
-  // Reuse your existing unlockIP flow with different types
-  await unlockIP(productId, type);   // 'full', 'delivery', or 'plan'
+
+  // --------------------------------------------
+  // VALIDATE GEOSMART PRICE
+  // --------------------------------------------
+
+  const geoAmount = Number(amount);
+  const geoCurrency = String(currency || '').toUpperCase();
+  const geoCountry = String(country || 'US').toUpperCase();
+
+  if (
+    !Number.isFinite(geoAmount) ||
+    geoAmount <= 0 ||
+    !geoCurrency
+  ) {
+    console.error('Invalid GeoSmart payment data:', {
+      productId,
+      amount,
+      currency,
+      country,
+      type
+    });
+
+    alert('Unable to determine the correct localized price.');
+    return;
+  }
+
+  console.log('🌍 INITIATE GEOSMART PAYMENT', {
+    productId,
+    amount: geoAmount,
+    currency: geoCurrency,
+    country: geoCountry,
+    paymentType: type
+  });
+
+  // --------------------------------------------
+  // DETERMINE PAYMENT METHOD
+  // --------------------------------------------
+
+  /*
+   * Kenya can use mobile money.
+   * Other countries use Stripe.
+   */
+
+  const paymentMethod =
+    geoCountry === 'KE'
+      ? 'mobile_money'
+      : 'stripe';
+
+  // --------------------------------------------
+  // MOBILE MONEY
+  // --------------------------------------------
+
+  if (paymentMethod === 'mobile_money') {
+
+    const phone =
+      window.userPhone ||
+      window.phone ||
+      prompt('Enter your M-Pesa phone number:');
+
+    if (!phone) {
+      alert('Phone number is required.');
+      return;
+    }
+
+    await buyProduct(
+      productId,
+      'mobile_money',
+      geoAmount,
+      geoCurrency,
+      geoCountry,
+      type,
+      phone
+    );
+
+    return;
+  }
+
+  // --------------------------------------------
+  // STRIPE
+  // --------------------------------------------
+
+  await buyProduct(
+    productId,
+    'stripe',
+    geoAmount,
+    geoCurrency,
+    geoCountry,
+    type
+  );
 }
 
-async function buyProduct(productId, paymentMethod) {
+
+// ============================================
+// BUY PRODUCT
+// ============================================
+
+async function buyProduct(
+  productId,
+  paymentMethod,
+  amount,
+  currency,
+  country,
+  paymentType,
+  phone = null
+) {
+
+  const geoAmount = Number(amount);
+  const geoCurrency = String(currency || '').toUpperCase();
+  const geoCountry = String(country || 'US').toUpperCase();
+
+  if (
+    !Number.isFinite(geoAmount) ||
+    geoAmount <= 0
+  ) {
+    throw new Error('Invalid GeoSmart amount');
+  }
+
+  if (!geoCurrency) {
+    throw new Error('GeoSmart currency is missing');
+  }
+
+  console.log('💰 SENDING GEOSMART PRICE TO SERVER', {
+    productId,
+    paymentMethod,
+    amount: geoAmount,
+    currency: geoCurrency,
+    country: geoCountry,
+    paymentType
+  });
+
   const response = await fetch(
     `/api/products/${productId}/purchase`,
     {
       method: 'POST',
+
       headers: {
         'Content-Type': 'application/json'
       },
+
       body: JSON.stringify({
-        paymentMethod
+
+        // Payment information
+        paymentMethod,
+        paymentType,
+
+        // GeoSmart pricing
+        amount: geoAmount,
+        currency: geoCurrency,
+        country: geoCountry,
+
+        // Required for M-Pesa
+        phone
+
       })
     }
   );
 
   const data = await response.json();
 
+  console.log('💳 PAYMENT SERVER RESPONSE:', data);
+
   if (!response.ok) {
-    throw new Error(data.error || 'Payment could not be started');
-  }
-
-  // Stripe
-  if (data.paymentMethod === 'stripe' && data.checkoutUrl) {
-    window.location.href = data.checkoutUrl;
-    return;
-  }
-
-  // Mobile money
-  if (data.paymentMethod === 'mobile_money') {
-    alert(
-      `Payment request sent. Complete the payment on your phone.`
+    throw new Error(
+      data.error ||
+      'Payment could not be started'
     );
+  }
+
+  // ==========================================
+  // STRIPE
+  // ==========================================
+
+  if (
+    data.paymentMethod === 'stripe' &&
+    data.checkoutUrl
+  ) {
+
+    window.location.href =
+      data.checkoutUrl;
+
     return;
   }
+
+  // ==========================================
+  // MOBILE MONEY
+  // ==========================================
+
+  if (
+    data.paymentMethod === 'mobile_money'
+  ) {
+
+    alert(
+      `Payment request sent.\n\n` +
+      `Amount: ${data.displayCurrency || data.currency} ` +
+      `${data.displayAmount || data.amount}`
+    );
+
+    return;
+  }
+
+  throw new Error(
+    'Unknown payment response'
+  );
 }
 function showPurchaseOptions(productId, geoPrice) {
 
