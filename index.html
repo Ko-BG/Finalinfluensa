@@ -3493,13 +3493,11 @@ async function initiateEcommercePayment(
   }
 }
 function showPurchaseOptions(productId, geoPrice) {
-  alert("NEW CODE IS RUNNING");
-
-    console.log("🔥 NEW showPurchaseOptions");
+  console.log("🔥 showPurchaseOptions invoked");
   console.log("🌍 GeoSmart price received:", geoPrice);
 
   // --------------------------------
-  // VALIDATE
+  // 1. VALIDATION
   // --------------------------------
   if (
     !geoPrice ||
@@ -3520,29 +3518,27 @@ function showPurchaseOptions(productId, geoPrice) {
     return;
   }
 
-  const currencyCode =
-    String(geoPrice.currency).toUpperCase();
-
-  const country =
-    String(
-      geoPrice.country ||
-      window.userCountry ||
-      "US"
-    ).toUpperCase();
+  const currencyCode = String(geoPrice.currency).toUpperCase().trim();
+  const country = String(
+    geoPrice.country || window.userCountry || "US"
+  ).toUpperCase().trim();
 
   // --------------------------------
-  // FORMAT PRICE
+  // 2. SAFE CURRENCY FORMATTING
   // --------------------------------
-  const formatter = new Intl.NumberFormat(
-    geoPrice.locale || undefined,
-    {
+  let formattedPrice = `${currencyCode} ${amount.toFixed(2)}`;
+  let installmentPrice = `${currencyCode} ${(amount / 3).toFixed(2)}`;
+
+  try {
+    const formatter = new Intl.NumberFormat(geoPrice.locale || undefined, {
       style: "currency",
-      currency: currencyCode
-    }
-  );
-
-  const formattedPrice = formatter.format(amount);
-  const installmentPrice = formatter.format(amount / 3);
+      currency: currencyCode,
+    });
+    formattedPrice = formatter.format(amount);
+    installmentPrice = formatter.format(amount / 3);
+  } catch (error) {
+    console.warn("⚠️ Intl.NumberFormat failed, falling back to manual format:", error);
+  }
 
   console.log("🌍 COUNTRY:", country);
   console.log("💰 AMOUNT:", amount);
@@ -3550,71 +3546,30 @@ function showPurchaseOptions(productId, geoPrice) {
   console.log("💵 PRICE:", formattedPrice);
 
   // --------------------------------
-  // SAFE PRODUCT ID
+  // 3. DELIVERY OPTION CHECK
   // --------------------------------
-  const safeProductId =
-    String(productId).replace(/'/g, "\\'");
+  const showDelivery = ["KE", "TZ", "UG", "RW"].includes(country);
 
   // --------------------------------
-  // DELIVERY OPTION
-  // --------------------------------
-  const showDelivery = [
-    "KE",
-    "TZ",
-    "UG",
-    "RW"
-  ].includes(country);
-
-  // --------------------------------
-  // MODAL
+  // 4. GENERATE MODAL HTML
   // --------------------------------
   const modalHTML = `
-    <div
-      id="purchase-modal"
-      class="fixed inset-0 bg-black/95 backdrop-blur-2xl
-             flex items-center justify-center z-[200]">
+    <div id="purchase-modal" class="fixed inset-0 bg-black/95 backdrop-blur-2xl flex items-center justify-center z-[200]">
+      <div class="glass p-8 w-full max-w-md rounded-3xl">
+        <h3 class="text-2xl font-bold text-yellow-400 mb-3">Choose Payment Option</h3>
 
-      <div
-        class="glass p-8 w-full max-w-md rounded-3xl">
-
-        <h3
-          class="text-2xl font-bold text-yellow-400 mb-3">
-          Choose Payment Option
-        </h3>
-
-        <!-- PRICE -->
-        <div
-          class="text-center text-2xl font-bold text-white mb-6">
-
+        <div class="text-center text-2xl font-bold text-white mb-6">
           ${formattedPrice}
-
         </div>
 
         <div class="space-y-4">
-
           <!-- FULL PAYMENT -->
           <button
             type="button"
-            class="w-full py-4 bg-yellow-500
-                   hover:bg-yellow-400
-                   text-black font-bold rounded-xl"
-            onclick="initiatePurchase(
-              '${safeProductId}',
-              {
-                amount: ${amount},
-                currency: '${currencyCode}',
-                country: '${country}',
-                formatted: '${formattedPrice}'
-              },
-              'full'
-            )">
-
+            class="purchase-btn w-full py-4 bg-yellow-500 hover:bg-yellow-400 text-black font-bold rounded-xl transition-colors"
+            data-type="full">
             💳 Pay Full Now
-
-            <span class="block text-sm opacity-70">
-              ${formattedPrice}
-            </span>
-
+            <span class="block text-sm opacity-70">${formattedPrice}</span>
           </button>
 
           <!-- DELIVERY -->
@@ -3623,26 +3578,10 @@ function showPurchaseOptions(productId, geoPrice) {
               ? `
                 <button
                   type="button"
-                  class="w-full py-4 bg-white/10
-                         hover:bg-white/20
-                         text-white font-bold rounded-xl"
-                  onclick="initiatePurchase(
-                    '${safeProductId}',
-                    {
-                      amount: ${amount},
-                      currency: '${currencyCode}',
-                      country: '${country}',
-                      formatted: '${formattedPrice}'
-                    },
-                    'delivery'
-                  )">
-
+                  class="purchase-btn w-full py-4 bg-white/10 hover:bg-white/20 text-white font-bold rounded-xl transition-colors"
+                  data-type="delivery">
                   📦 Buy on Delivery
-
-                  <span class="block text-sm opacity-70">
-                    Pay on receipt
-                  </span>
-
+                  <span class="block text-sm opacity-70">Pay on receipt</span>
                 </button>
               `
               : ""
@@ -3651,71 +3590,77 @@ function showPurchaseOptions(productId, geoPrice) {
           <!-- PAYMENT PLAN -->
           <button
             type="button"
-            class="w-full py-4 bg-emerald-500
-                   hover:bg-emerald-400
-                   text-black font-bold rounded-xl"
-            onclick="initiatePurchase(
-              '${safeProductId}',
-              {
-                amount: ${amount},
-                currency: '${currencyCode}',
-                country: '${country}',
-                formatted: '${formattedPrice}'
-              },
-              'plan'
-            )">
-
+            class="purchase-btn w-full py-4 bg-emerald-500 hover:bg-emerald-400 text-black font-bold rounded-xl transition-colors"
+            data-type="plan">
             📅 3-Month Payment Plan
-
-            <span class="block text-sm opacity-70">
-              ${installmentPrice} × 3
-            </span>
-
+            <span class="block text-sm opacity-70">${installmentPrice} × 3</span>
           </button>
-
         </div>
 
         <!-- CANCEL -->
         <button
           type="button"
-          onclick="closePurchaseModal()"
-          class="mt-6 w-full py-3 text-slate-400">
-
+          id="cancel-purchase-btn"
+          class="mt-6 w-full py-3 text-slate-400 hover:text-white transition-colors">
           Cancel
-
         </button>
 
-        <div
-          class="mt-5 text-center text-xs text-slate-500">
-
+        <div class="mt-5 text-center text-xs text-slate-500">
           Secured by INFLUENSA • GeoSmart
-
         </div>
-
       </div>
     </div>
   `;
 
   // --------------------------------
-  // REMOVE OLD MODAL
+  // 5. REMOVE EXISTING MODAL
   // --------------------------------
-  const existingModal =
-    document.getElementById("purchase-modal");
-
+  const existingModal = document.getElementById("purchase-modal");
   if (existingModal) {
     existingModal.remove();
   }
 
   // --------------------------------
-  // RENDER
+  // 6. RENDER DOM & ATTACH LISTENERS
   // --------------------------------
-  document.body.insertAdjacentHTML(
-    "beforeend",
-    modalHTML
-  );
+  document.body.insertAdjacentHTML("beforeend", modalHTML);
 
-  console.log("✅ PURCHASE MODAL RENDERED");
+  const modalElement = document.getElementById("purchase-modal");
+  const purchaseData = {
+    amount,
+    currency: currencyCode,
+    country,
+    formatted: formattedPrice,
+  };
+
+  // Payment Option Click Handlers
+  modalElement.querySelectorAll(".purchase-btn").forEach((button) => {
+    button.addEventListener("click", () => {
+      const paymentType = button.dataset.type;
+      modalElement.remove(); // Close modal
+      
+      if (typeof initiatePurchase === "function") {
+        initiatePurchase(productId, purchaseData, paymentType);
+      } else {
+        console.error("❌ initiatePurchase function is not defined.");
+      }
+    });
+  });
+
+  // Cancel Handler
+  const cancelButton = modalElement.querySelector("#cancel-purchase-btn");
+  if (cancelButton) {
+    cancelButton.addEventListener("click", () => {
+      modalElement.remove();
+      if (typeof closePurchaseModal === "function") {
+        closePurchaseModal();
+      }
+    });
+  }
+
+  console.log("✅ PURCHASE MODAL RENDERED AND LISTENERS ATTACHED");
 }
+
 function closePurchaseModal() {
     const modal = document.getElementById('purchase-modal');
     if (modal) modal.remove();
