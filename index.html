@@ -3309,28 +3309,38 @@ async function initiatePayment(productId, price, type) {
   await unlockIP(productId, type);   // 'full', 'delivery', or 'plan'
 }
 
-async function buyProduct(productId) {
-  const product = allEcomProducts.find(
-    p => p._id === productId
+async function buyProduct(productId, paymentMethod) {
+  const response = await fetch(
+    `/api/products/${productId}/purchase`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        paymentMethod
+      })
+    }
   );
 
-  if (!product) return;
+  const data = await response.json();
 
-  const price = await getGeoSmartPrice(
-    product.price,
-    product.baseCurrency || 'USD'
-  );
+  if (!response.ok) {
+    throw new Error(data.error || 'Payment could not be started');
+  }
 
-  if (
-    confirm(
-      `Purchase ${product.name} for ${price.formatted}?`
-    )
-  ) {
-    await unlockIP(productId, 'product_purchase', {
-      amount: price.amount,
-      currency: price.currency,
-      country: price.country
-    });
+  // Stripe
+  if (data.paymentMethod === 'stripe' && data.checkoutUrl) {
+    window.location.href = data.checkoutUrl;
+    return;
+  }
+
+  // Mobile money
+  if (data.paymentMethod === 'mobile_money') {
+    alert(
+      `Payment request sent. Complete the payment on your phone.`
+    );
+    return;
   }
 }
 function showPurchaseOptions(productId, price) {
