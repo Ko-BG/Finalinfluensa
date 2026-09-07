@@ -3478,21 +3478,86 @@ function closePurchaseModal() {
     const modal = document.getElementById('purchase-modal');
     if (modal) modal.remove();
 }
-async function initiatePurchase(productId, price, type) {
-    closePurchaseModal();
-    
-    let finalAmount = price;
-    let paymentType = type;
+async function initiatePurchase(
+  productId,
+  geoPrice,
+  type
+) {
+  closePurchaseModal();
 
-    if (type === 'plan') {
-        finalAmount = Math.round(price / 3);  // First installment
-        showToast(`First installment: KES ${finalAmount} (3-month plan)`);
-    } else if (type === 'delivery') {
-        showToast("Order placed! Pay on delivery.");
-    }
+  // Validate GeoSmart price
+  if (
+    !geoPrice ||
+    geoPrice.amount === undefined ||
+    !geoPrice.currency
+  ) {
+    console.error('Invalid GeoSmart price:', geoPrice);
+    showToast('Unable to determine the correct price.');
+    return;
+  }
 
-    // Reuse your existing payment system
-    await unlockIP(productId, paymentType);   // 'full', 'delivery', or 'plan'
+  const amount = Number(geoPrice.amount);
+  const currencyCode = geoPrice.currency;
+  const country =
+    geoPrice.country ||
+    window.userCountry ||
+    'US';
+
+  // Use the EXACT GeoSmart formatted price
+  const formattedPrice =
+    geoPrice.formatted ||
+    new Intl.NumberFormat(
+      geoPrice.locale || undefined,
+      {
+        style: 'currency',
+        currency: currencyCode
+      }
+    ).format(amount);
+
+  let finalAmount = amount;
+  let paymentType = type;
+
+  // 3-month payment plan
+  if (type === 'plan') {
+    finalAmount = amount / 3;
+
+    const formattedInstallment =
+      new Intl.NumberFormat(
+        geoPrice.locale || undefined,
+        {
+          style: 'currency',
+          currency: currencyCode
+        }
+      ).format(finalAmount);
+
+    showToast(
+      `First installment: ${formattedInstallment} (3-month plan)`
+    );
+  }
+
+  // Pay on delivery
+  else if (type === 'delivery') {
+    showToast(
+      `Order placed! Pay ${formattedPrice} on delivery.`
+    );
+  }
+
+  // Full payment
+  else if (type === 'full') {
+    showToast(
+      `Processing payment of ${formattedPrice}`
+    );
+  }
+
+  // Pass the GeoSmart currency/country through
+  // to the payment system.
+  await unlockIP(
+    productId,
+    paymentType,
+    finalAmount,
+    currencyCode,
+    country
+  );
 }
 function debounceEcomSearch(val) {
   clearTimeout(searchTimeout);
