@@ -3428,218 +3428,69 @@ function updateProductImagesName() {
 // INITIATE PAYMENT
 // ============================================
 
-async function initiatePayment(
+async function initiateEcommercePayment(
   productId,
   amount,
-  type,
+  paymentType,
   currency,
   country
 ) {
+  try {
 
-  closePurchaseModal();
+    const geoCountry =
+      String(
+        country ||
+        window.userCountry ||
+        'US'
+      ).toUpperCase();
 
-  // --------------------------------------------
-  // VALIDATE GEOSMART PRICE
-  // --------------------------------------------
+    const geoCurrency =
+      String(
+        currency ||
+        userCurrency?.code ||
+        ''
+      ).toUpperCase();
 
-  const geoAmount = Number(amount);
-  const geoCurrency = String(currency || '').toUpperCase();
-  const geoCountry = String(country || 'US').toUpperCase();
+    const geoAmount =
+      Number(amount);
 
-  if (
-    !Number.isFinite(geoAmount) ||
-    geoAmount <= 0 ||
-    !geoCurrency
-  ) {
-    console.error('Invalid GeoSmart payment data:', {
+    // Decide gateway
+    const paymentMethod =
+      isEastAfrica(geoCountry)
+        ? 'mobile_money'
+        : 'stripe';
+
+    console.log('🛒 ECOMMERCE PAYMENT:', {
       productId,
-      amount,
-      currency,
-      country,
-      type
+      amount: geoAmount,
+      currency: geoCurrency,
+      country: geoCountry,
+      paymentMethod,
+      paymentType
     });
-
-    alert('Unable to determine the correct localized price.');
-    return;
-  }
-
-  console.log('🌍 INITIATE GEOSMART PAYMENT', {
-    productId,
-    amount: geoAmount,
-    currency: geoCurrency,
-    country: geoCountry,
-    paymentType: type
-  });
-
-  // --------------------------------------------
-  // DETERMINE PAYMENT METHOD
-  // --------------------------------------------
-
-  /*
-   * Kenya can use mobile money.
-   * Other countries use Stripe.
-   */
-
-  const paymentMethod =
-    geoCountry === 'KE'
-      ? 'mobile_money'
-      : 'stripe';
-
-  // --------------------------------------------
-  // MOBILE MONEY
-  // --------------------------------------------
-
-  if (paymentMethod === 'mobile_money') {
-
-    const phone =
-      window.userPhone ||
-      window.phone ||
-      prompt('Enter your M-Pesa phone number:');
-
-    if (!phone) {
-      alert('Phone number is required.');
-      return;
-    }
 
     await buyProduct(
       productId,
-      'mobile_money',
+      paymentMethod,
       geoAmount,
       geoCurrency,
       geoCountry,
-      type,
-      phone
+      paymentType,
+      currentUser?.identity || null
     );
 
-    return;
-  }
+  } catch (error) {
 
-  // --------------------------------------------
-  // STRIPE
-  // --------------------------------------------
-
-  await buyProduct(
-    productId,
-    'stripe',
-    geoAmount,
-    geoCurrency,
-    geoCountry,
-    type
-  );
-}
-
-
-// ============================================
-// BUY PRODUCT
-// ============================================
-
-async function buyProduct(
-  productId,
-  paymentMethod,
-  amount,
-  currency,
-  country,
-  paymentType,
-  phone = null
-) {
-
-  const geoAmount = Number(amount);
-  const geoCurrency = String(currency || '').toUpperCase();
-  const geoCountry = String(country || 'US').toUpperCase();
-
-  if (
-    !Number.isFinite(geoAmount) ||
-    geoAmount <= 0
-  ) {
-    throw new Error('Invalid GeoSmart amount');
-  }
-
-  if (!geoCurrency) {
-    throw new Error('GeoSmart currency is missing');
-  }
-
-  console.log('💰 SENDING GEOSMART PRICE TO SERVER', {
-    productId,
-    paymentMethod,
-    amount: geoAmount,
-    currency: geoCurrency,
-    country: geoCountry,
-    paymentType
-  });
-
-  const response = await fetch(
-    `/api/products/${productId}/purchase`,
-    {
-      method: 'POST',
-
-      headers: {
-        'Content-Type': 'application/json'
-      },
-
-      body: JSON.stringify({
-
-        // Payment information
-        paymentMethod,
-        paymentType,
-
-        // GeoSmart pricing
-        amount: geoAmount,
-        currency: geoCurrency,
-        country: geoCountry,
-
-        // Required for M-Pesa
-        phone
-
-      })
-    }
-  );
-
-  const data = await response.json();
-
-  console.log('💳 PAYMENT SERVER RESPONSE:', data);
-
-  if (!response.ok) {
-    throw new Error(
-      data.error ||
-      'Payment could not be started'
-    );
-  }
-
-  // ==========================================
-  // STRIPE
-  // ==========================================
-
-  if (
-    data.paymentMethod === 'stripe' &&
-    data.checkoutUrl
-  ) {
-
-    window.location.href =
-      data.checkoutUrl;
-
-    return;
-  }
-
-  // ==========================================
-  // MOBILE MONEY
-  // ==========================================
-
-  if (
-    data.paymentMethod === 'mobile_money'
-  ) {
-
-    alert(
-      `Payment request sent.\n\n` +
-      `Amount: ${data.displayCurrency || data.currency} ` +
-      `${data.displayAmount || data.amount}`
+    console.error(
+      '❌ Ecommerce payment failed:',
+      error
     );
 
-    return;
+    showToast(
+      'Payment Error: ' +
+      (error.message || 'Please try again')
+    );
   }
-
-  throw new Error(
-    'Unknown payment response'
-  );
 }
 function showPurchaseOptions(productId, geoPrice) {
 
@@ -3707,16 +3558,16 @@ function showPurchaseOptions(productId, geoPrice) {
 
   const deliveryButton = showDelivery ? `
     <button
-      onclick="initiatePayment(
-        '${productId}',
-        ${amount},
-        'delivery',
-        '${currencyCode}',
-        '${country}'
-      )"
-      class="w-full py-4 bg-white/10 text-white font-bold rounded-xl border border-white/30">
-
-      📦 Buy on Delivery
+      onclick="initiatePurchase(
+  '${productId}',
+  {
+    amount: ${amount},
+    currency: '${currencyCode}',
+    country: '${country}',
+    formatted: '${formattedPrice}'
+  },
+  'delivery'
+)"
 
       <span class="block text-sm opacity-70">
         Pay on receipt
@@ -3730,16 +3581,15 @@ function showPurchaseOptions(productId, geoPrice) {
   // -----------------------------
   const planButton = `
     <button
-      onclick="initiatePayment(
-        '${productId}',
-        ${amount},
-        'plan',
-        '${currencyCode}',
-        '${country}'
-      )"
-      class="w-full py-4 bg-emerald-500 text-black font-bold rounded-xl">
-
-      📅 3-Month Payment Plan
+      onclick="initiatePurchase(
+  '${productId}',
+  {
+    amount: ${amount},
+    currency: '${currencyCode}',
+    country: '${country}'
+  },
+  'plan'
+)"
 
       <span class="block text-sm opacity-70">
         ${installmentPrice} × 3
@@ -3771,16 +3621,16 @@ function showPurchaseOptions(productId, geoPrice) {
 
           <!-- PAY FULL -->
           <button
-            onclick="initiatePayment(
-              '${productId}',
-              ${amount},
-              'full',
-              '${currencyCode}',
-              '${country}'
-            )"
-            class="w-full py-4 bg-yellow-500 text-black font-bold rounded-xl">
-
-            💳 Pay Full Now
+        onclick="initiatePurchase(
+  '${productId}',
+  {
+    amount: ${amount},
+    currency: '${currencyCode}',
+    country: '${country}',
+    formatted: '${formattedPrice}'
+  },
+  'full'
+)"
 
           </button>
 
@@ -3833,78 +3683,143 @@ async function initiatePurchase(
 ) {
   closePurchaseModal();
 
-  // Validate GeoSmart price
+  // ============================================================
+  // VALIDATE GEOSMART PRICE
+  // ============================================================
+
   if (
     !geoPrice ||
     geoPrice.amount === undefined ||
+    geoPrice.amount === null ||
     !geoPrice.currency
   ) {
-    console.error('Invalid GeoSmart price:', geoPrice);
-    showToast('Unable to determine the correct price.');
+    console.error(
+      '❌ Invalid GeoSmart price:',
+      geoPrice
+    );
+
+    showToast(
+      'Unable to determine the correct price.'
+    );
+
     return;
   }
 
   const amount = Number(geoPrice.amount);
-  const currencyCode = geoPrice.currency;
-  const country =
-    geoPrice.country ||
-    window.userCountry ||
-    'US';
 
-  // Use the EXACT GeoSmart formatted price
-  const formattedPrice =
-    geoPrice.formatted ||
+  const currencyCode =
+    String(
+      geoPrice.currency
+    ).toUpperCase();
+
+  const country =
+    String(
+      geoPrice.country ||
+      window.userCountry ||
+      'US'
+    ).toUpperCase();
+
+  if (
+    !Number.isFinite(amount) ||
+    amount <= 0
+  ) {
+    showToast(
+      'Invalid product price.'
+    );
+
+    return;
+  }
+
+  // ============================================================
+  // PAYMENT AMOUNT
+  // ============================================================
+
+  let finalAmount = amount;
+
+  if (type === 'plan') {
+    finalAmount = amount / 3;
+  }
+
+  // ============================================================
+  // CHOOSE PAYMENT GATEWAY
+  // ============================================================
+
+  const paymentMethod =
+    isEastAfrica(country)
+      ? 'mobile_money'
+      : 'stripe';
+
+  // ============================================================
+  // DISPLAY
+  // ============================================================
+
+  const formatter =
     new Intl.NumberFormat(
       geoPrice.locale || undefined,
       {
         style: 'currency',
         currency: currencyCode
       }
-    ).format(amount);
+    );
 
-  let finalAmount = amount;
-  let paymentType = type;
+  const formattedAmount =
+    formatter.format(finalAmount);
 
-  // 3-month payment plan
+  console.log(
+    '🛒 ECOMMERCE GEOSMART PAYMENT',
+  );
+
+  console.log({
+    productId,
+    type,
+    amount: finalAmount,
+    currency: currencyCode,
+    country,
+    paymentMethod
+  });
+
+  // ============================================================
+  // PAYMENT PLAN
+  // ============================================================
+
   if (type === 'plan') {
-    finalAmount = amount / 3;
-
-    const formattedInstallment =
-      new Intl.NumberFormat(
-        geoPrice.locale || undefined,
-        {
-          style: 'currency',
-          currency: currencyCode
-        }
-      ).format(finalAmount);
-
     showToast(
-      `First installment: ${formattedInstallment} (3-month plan)`
+      `First installment: ${formattedAmount}`
     );
   }
 
-  // Pay on delivery
+  // ============================================================
+  // DELIVERY
+  // ============================================================
+
   else if (type === 'delivery') {
     showToast(
-      `Order placed! Pay ${formattedPrice} on delivery.`
+      `Processing ${formattedAmount} payment on delivery`
     );
   }
 
-  // Full payment
-  else if (type === 'full') {
+  // ============================================================
+  // FULL PAYMENT
+  // ============================================================
+
+  else {
     showToast(
-      `Processing payment of ${formattedPrice}`
+      `Processing payment of ${formattedAmount}`
     );
   }
 
-  // Pass the GeoSmart currency/country through
-  // to the payment system.
-  await unlockIP(
+  // ============================================================
+  // SEND TO ECOMMERCE BACKEND
+  // ============================================================
+
+  await buyProduct(
     productId,
-    paymentType,
+    paymentMethod,
     finalAmount,
     currencyCode,
-    country
+    country,
+    type,
+    currentUser?.identity || null
   );
 }
 function debounceEcomSearch(val) {
