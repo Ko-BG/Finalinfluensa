@@ -474,6 +474,7 @@ const WalletLedger = mongoose.model(
     "WalletLedger",
     walletLedgerSchema
 );
+
 const PayoutSchema = new mongoose.Schema(
     {
         userId: {
@@ -680,6 +681,109 @@ const postSchema = new mongoose.Schema({
     original_creator: { type: String, default: "" }
 });
 const Post = mongoose.model('Post', postSchema);
+const mongoose = require("mongoose");
+
+const IPFileSchema = new mongoose.Schema({
+    originalName: String,
+    storedName: String,
+    path: String,
+    mimeType: String,
+    size: Number,
+    uploadedAt: {
+        type: Date,
+        default: Date.now
+    }
+});
+
+const IPRegistrationSchema = new mongoose.Schema({
+
+    // ORIGINAL CID
+    cid: {
+        type: String,
+        default: null,
+        index: true
+    },
+
+    // UNIQUE IP CID
+    ipCid: {
+        type: String,
+        required: true,
+        unique: true,
+        index: true
+    },
+
+    ipType: {
+        type: String,
+        required: true
+    },
+
+    ipSystem: {
+        type: String
+    },
+
+    ipCategory: {
+        type: String
+    },
+
+    title: {
+        type: String,
+        required: true
+    },
+
+    ownerName: {
+        type: String,
+        required: true
+    },
+
+    nationalId: {
+        type: String,
+        required: true
+    },
+
+    description: {
+        type: String,
+        required: true
+    },
+
+    supportingFiles: {
+        type: [IPFileSchema],
+        default: []
+    },
+
+    registrant: {
+        type: String,
+        default: null
+    },
+
+    status: {
+        type: String,
+        default: "registered"
+    },
+
+    protocolVersion: {
+        type: String,
+        default: "INFLUENSA-IP-1.0"
+    },
+
+    timestamp: {
+        type: Date,
+        default: Date.now
+    },
+
+    registeredAt: {
+        type: Date,
+        default: Date.now
+    }
+
+}, {
+    timestamps: true
+});
+
+module.exports =
+    mongoose.model(
+        "IPRegistration",
+        IPRegistrationSchema
+    );
 const userSchema = new mongoose.Schema({ 
     identity: { type: String, unique: true, index: true }, 
     afroCoins: { type: Number, default: 0 },
@@ -6367,6 +6471,476 @@ app.post('/api/posts', upload.any(), async (req, res) => {
     });
   }
 });
+// ============================================================
+// IP REGISTRATION API
+// MULTER + AWS S3 + IP CID + MONGODB
+// ============================================================
+
+const ipUpload = multer({
+    storage: multerS3({
+        s3: s3,
+        bucket: process.env.AWS_S3_BUCKET,
+
+        contentType: multerS3.AUTO_CONTENT_TYPE,
+
+        key: function (req, file, cb) {
+
+            const safeName = (file.originalname || "file")
+                .replace(/[^a-zA-Z0-9._-]/g, "_");
+
+            const uniqueUploadId =
+                Date.now() +
+                "-" +
+                crypto.randomBytes(16).toString("hex");
+
+            // Separate S3 location for IP registrations
+            const s3Key =
+                `ip-registrations/${uniqueUploadId}-${safeName}`;
+
+            cb(null, s3Key);
+        }
+    }),
+
+    limits: {
+        files: 50,
+        fileSize: 500 * 1024 * 1024
+    }
+});
+
+
+// ============================================================
+// POST /api/ip/register
+// ============================================================
+
+app.post(
+    '/api/ip/register',
+    ipUpload.any(),
+    async (req, res) => {
+
+        try {
+
+            const {
+                ipType,
+                title,
+                ownerName,
+                nationalId,
+                description,
+                registrant,
+                originalCid
+            } = req.body;
+
+
+            // ------------------------------------------------
+            // 1. VALIDATION
+            // ------------------------------------------------
+
+            if (!ipType) {
+                return res.status(400).json({
+                    error: "IP_TYPE_REQUIRED"
+                });
+            }
+
+            if (!title || !title.trim()) {
+                return res.status(400).json({
+                    error: "IP_TITLE_REQUIRED"
+                });
+            }
+
+            if (!ownerName || !ownerName.trim()) {
+                return res.status(400).json({
+                    error: "OWNER_NAME_REQUIRED"
+                });
+            }
+
+            if (!description || !description.trim()) {
+                return res.status(400).json({
+                    error: "IP_DESCRIPTION_REQUIRED"
+                });
+            }
+
+
+            // ------------------------------------------------
+            // 2. CHECK UPLOADED FILES
+            // ------------------------------------------------
+
+            if (!req.files || req.files.length === 0) {
+
+                return res.status(400).json({
+                    error: "FILE_REQUIRED",
+                    message:
+                        "At least one supporting file is required."
+                });
+            }
+
+            const files = req.files;
+
+
+            // ------------------------------------------------
+            // 3. S3 UPLOAD DEBUG
+            // ------------------------------------------------
+
+            console.log("========== IP S3 UPLOAD ==========");
+
+            console.log(
+                files.map(f => ({
+                    fieldname: f.fieldname,
+                    originalname: f.originalname,
+                    filename: f.filename,
+                    key: f.key,
+                    location: f.location,
+                    bucket: f.bucket,
+                    mime: f.mimetype,
+                    size: f.size
+                }))
+            );
+
+            console.log("===================================");
+
+
+            // ------------------------------------------------
+            // 4. MAKE SURE S3 KEYS EXIST
+            // ------------------------------------------------
+
+            const missingS3Key =
+                files.find(file => !file.key);
+
+            if (missingS3Key) {
+
+                console.error(
+                    "❌ S3 KEY MISSING:",
+                    missingS3Key.originalname
+                );
+
+                return res.status(500).json({
+                    error: "S3_KEY_MISSING",
+                    message:
+                        "File uploaded but S3 key was not returned."
+                });
+            }
+
+
+            // ------------------------------------------------
+            // 5. CREATE FILE FINGERPRINT
+            // ------------------------------------------------
+
+            let contentHash = null;
+
+            try {
+
+                const sortedFiles =
+                    [...files].sort((a, b) =>
+                        (a.originalname || "")
+                            .localeCompare(
+                                b.originalname || ""
+                            )
+                    );
+
+                const hash =
+                    crypto.createHash("sha256");
+
+                for (const file of sortedFiles) {
+
+                    hash.update(
+                        file.originalname || ""
+                    );
+
+                    hash.update(
+                        file.mimetype || ""
+                    );
+
+                    hash.update(
+                        file.buffer ||
+                        `${file.key || file.filename || file.originalname}-${file.size}`
+                    );
+                }
+
+                contentHash =
+                    hash.digest("hex");
+
+            } catch (hashError) {
+
+                console.warn(
+                    "⚠️ IP fingerprint skipped:",
+                    hashError.message
+                );
+            }
+
+
+            // ------------------------------------------------
+            // 6. DUPLICATE CHECK
+            // ------------------------------------------------
+
+            if (contentHash) {
+
+                const escapedTitle =
+                    title
+                        .trim()
+                        .replace(
+                            /[.*+?^${}()|[\]\\]/g,
+                            '\\$&'
+                        );
+
+                const existing =
+                    await IPRegistration.findOne({
+
+                        ipType: ipType,
+
+                        title: {
+                            $regex:
+                                new RegExp(
+                                    `^${escapedTitle}$`,
+                                    "i"
+                                )
+                        },
+
+                        contentHash:
+                            contentHash
+                    });
+
+                if (existing) {
+
+                    return res.status(409).json({
+
+                        error:
+                            "DUPLICATE_IP_REGISTRATION",
+
+                        message:
+                            "This IP registration already exists.",
+
+                        ipCid:
+                            existing.ipCid
+                    });
+                }
+            }
+
+
+            // ------------------------------------------------
+            // 7. PRESERVE ORIGINAL CID
+            // ------------------------------------------------
+
+            const cid =
+                originalCid ||
+                req.user?.cid ||
+                null;
+
+
+            // ------------------------------------------------
+            // 8. GENERATE UNIQUE IP CID
+            // ------------------------------------------------
+
+            const ipCid =
+                "IP-CID-" +
+                ipType.toUpperCase() +
+                "-" +
+                crypto
+                    .randomBytes(24)
+                    .toString("hex")
+                    .toUpperCase();
+
+
+            // ------------------------------------------------
+            // 9. FILE METADATA
+            // ------------------------------------------------
+
+            const fileMeta =
+                files.map(file => ({
+
+                    filename:
+                        file.filename ||
+                        file.originalname,
+
+                    originalname:
+                        file.originalname,
+
+                    key:
+                        file.key,
+
+                    mime:
+                        file.mimetype,
+
+                    size:
+                        file.size,
+
+                    bucket:
+                        file.bucket,
+
+                    location:
+                        file.location
+
+                }));
+
+
+            // ------------------------------------------------
+            // 10. PRIMARY S3 FILE
+            // ------------------------------------------------
+
+            const primaryFileKey =
+                files[0].key;
+
+
+            // ------------------------------------------------
+            // 11. SAVE IP REGISTRATION
+            // ------------------------------------------------
+
+            const ipRegistration =
+                await IPRegistration.create({
+
+                    // Original CID
+                    cid: cid,
+
+                    // New unique IP CID
+                    ipCid: ipCid,
+
+                    // Registration type
+                    ipType: ipType,
+
+                    // IP information
+                    title:
+                        title.trim(),
+
+                    ownerName:
+                        ownerName.trim(),
+
+                    nationalId:
+                        nationalId || null,
+
+                    description:
+                        description.trim(),
+
+                    registrant:
+                        registrant || null,
+
+                    // S3 files
+                    files:
+                        fileMeta,
+
+                    filekey:
+                        primaryFileKey,
+
+                    mime:
+                        files[0].mimetype,
+
+                    filename:
+                        files[0].filename ||
+                        files[0].originalname,
+
+                    fileCount:
+                        files.length,
+
+                    // Duplicate fingerprint
+                    contentHash:
+                        contentHash,
+
+                    // Registration status
+                    status:
+                        "registered"
+                });
+
+
+            // ------------------------------------------------
+            // 12. LOG
+            // ------------------------------------------------
+
+            console.log(
+                "=========================================="
+            );
+
+            console.log(
+                "✅ IP REGISTRATION SUCCESSFUL"
+            );
+
+            console.log(
+                "IP TYPE:",
+                ipType
+            );
+
+            console.log(
+                "TITLE:",
+                title
+            );
+
+            console.log(
+                "ORIGINAL CID:",
+                cid || "NONE"
+            );
+
+            console.log(
+                "IP CID:",
+                ipCid
+            );
+
+            console.log(
+                "FILES:",
+                files.length
+            );
+
+            console.log(
+                "PRIMARY S3 KEY:",
+                primaryFileKey
+            );
+
+            console.log(
+                "=========================================="
+            );
+
+
+            // ------------------------------------------------
+            // 13. RESPONSE
+            // ------------------------------------------------
+
+            return res.status(201).json({
+
+                success:
+                    true,
+
+                message:
+                    "Intellectual property registered successfully.",
+
+                registrationId:
+                    ipRegistration._id,
+
+                cid:
+                    cid,
+
+                ipCid:
+                    ipCid,
+
+                ipType:
+                    ipType,
+
+                title:
+                    ipRegistration.title,
+
+                fileCount:
+                    files.length,
+
+                files:
+                    fileMeta
+
+            });
+
+
+        } catch (err) {
+
+            console.error(
+                "❌ IP REGISTRATION ERROR:",
+                err
+            );
+
+            return res.status(500).json({
+
+                error:
+                    "IP_REGISTRATION_FAILED",
+
+                message:
+                    "Unable to register intellectual property.",
+
+                details:
+                    err.message
+            });
+        }
+    }
+);
 app.post('/api/posts/stream', async (req, res) => {
     try {
         const { title, price, owner, stream_url, scarcity_limit } = req.body;
