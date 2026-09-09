@@ -681,7 +681,7 @@ const postSchema = new mongoose.Schema({
     original_creator: { type: String, default: "" }
 });
 const Post = mongoose.model('Post', postSchema);
-const mongoose = require("mongoose");
+
 
 const IPFileSchema = new mongoose.Schema({
     originalName: String,
