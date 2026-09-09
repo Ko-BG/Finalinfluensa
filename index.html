@@ -595,115 +595,674 @@
       <button onclick="closeFab()" class="text-slate-500 hover:text-white text-2xl">✕</button>
     </div>
     
-    <!-- Mode Switch -->
-    <div class="flex gap-2 mb-8 p-1 bg-white/5 rounded-xl">
-      <button onclick="setFabMode('ip')" id="fab-ip-btn"
-        class="flex-1 py-3 text-sm font-bold rounded-lg bg-yellow-500 text-black">IP Asset</button>
-      <button onclick="setFabMode('product')" id="fab-product-btn"
-        class="flex-1 py-3 text-sm font-bold rounded-lg text-slate-400">E-Commerce Product</button>
-    </div>
+    <!-- ============================================================
+     FAB CATALOGUE / MODE SWITCH
+     ============================================================ -->
 
-    <!-- IP ASSET FORM -->
- <div id="fab-ip-form">
+<div class="flex gap-2 mb-8 p-1 bg-white/5 rounded-xl">
+
+  <!-- IP ASSET -->
+  <button
+    onclick="setFabMode('ip')"
+    id="fab-ip-btn"
+    class="flex-1 py-3 text-sm font-bold rounded-lg bg-yellow-500 text-black"
+  >
+    IP Asset
+  </button>
+
+  <!-- IP REGISTRATION CATALOGUE -->
+  <button
+    onclick="setFabMode('ip-registration')"
+    id="fab-ip-registration-btn"
+    class="flex-1 py-3 text-sm font-bold rounded-lg text-slate-400"
+  >
+    IP Registration
+  </button>
+
+  <!-- E-COMMERCE PRODUCT -->
+  <button
+    onclick="setFabMode('product')"
+    id="fab-product-btn"
+    class="flex-1 py-3 text-sm font-bold rounded-lg text-slate-400"
+  >
+    E-Commerce Product
+  </button>
+
+</div>
+
+
+<!-- ============================================================
+     EXISTING IP ASSET FORM
+     KEEPING EVERYTHING — INCLUDING LIVESTREAM
+     ============================================================ -->
+
+<div id="fab-ip-form">
+
   <div class="flex gap-2 mb-6 p-1 bg-white/5 rounded-xl">
-    <button onclick="setMintType('file')" id="typeFile" class="flex-1 py-2 text-[10px] uppercase font-bold rounded-lg bg-yellow-500 text-black">
+
+    <button
+      onclick="setMintType('file')"
+      id="typeFile"
+      class="flex-1 py-2 text-[10px] uppercase font-bold rounded-lg bg-yellow-500 text-black"
+    >
       File Upload
     </button>
-    <button onclick="setMintType('stream')" id="typeStream" class="flex-1 py-2 text-[10px] uppercase font-bold rounded-lg text-slate-400">
+
+    <button
+      onclick="setMintType('stream')"
+      id="typeStream"
+      class="flex-1 py-2 text-[10px] uppercase font-bold rounded-lg text-slate-400"
+    >
       Livestream
     </button>
+
   </div>
 
+
   <div class="space-y-5">
-    <input id="fabTitle" class="input-field w-full p-4 rounded-xl" placeholder="IP Asset Title"/>
-    
+
+    <input
+      id="fabTitle"
+      class="input-field w-full p-4 rounded-xl"
+      placeholder="IP Asset Title"
+    />
+
     <div class="grid grid-cols-2 gap-4">
-      <input id="fabPrice" type="number" class="input-field w-full p-4 rounded-xl" placeholder="Price (KES)"/>
-      <input id="fabLimit" type="number" class="input-field w-full p-4 rounded-xl" placeholder="Supply (0=∞)"/>
+
+      <input
+        id="fabPrice"
+        type="number"
+        class="input-field w-full p-4 rounded-xl"
+        placeholder="Price (KES)"
+      />
+
+      <input
+        id="fabLimit"
+        type="number"
+        class="input-field w-full p-4 rounded-xl"
+        placeholder="Supply (0=∞)"
+      />
+
     </div>
 
+
     <!-- MULTI-FILE UPLOAD ZONE -->
-    <div id="fileInputContainer" class="p-6 border-2 border-dashed border-white/10 rounded-2xl bg-white/5 text-center transition-all hover:border-cyan-500/40">
-      <input 
-        id="fabFile" 
-        type="file" 
-        class="hidden" 
-        multiple 
+
+    <div
+      id="fileInputContainer"
+      class="p-6 border-2 border-dashed border-white/10 rounded-2xl bg-white/5 text-center transition-all hover:border-cyan-500/40"
+    >
+
+      <input
+        id="fabFile"
+        type="file"
+        class="hidden"
+        multiple
         accept="*/*"
         onchange="handleFilesSelected(this)"
       />
-      
-      <label for="fabFile" id="fileLabel" class="cursor-pointer block">
+
+      <label
+        for="fabFile"
+        id="fileLabel"
+        class="cursor-pointer block"
+      >
+
         <div class="text-slate-400 text-sm font-medium mb-1">
           Drop files or click to select
         </div>
+
         <div class="text-[11px] text-slate-500">
           Albums • Documents • Videos • Blueprints • Research (Max 50 files)
         </div>
+
       </label>
 
+
       <!-- Selected files preview -->
-      <div id="selectedFilesList" class="mt-4 space-y-2 text-left hidden"></div>
+
+      <div
+        id="selectedFilesList"
+        class="mt-4 space-y-2 text-left hidden"
+      ></div>
+
     </div>
 
+
+    <!-- LIVESTREAM
+         EXISTING — KEEP -->
+
     <div id="streamInputContainer" class="hidden">
-      <input id="fabStreamUrl" class="input-field w-full p-4 rounded-xl" placeholder="https://youtube.com/live/..."/>
+
+      <input
+        id="fabStreamUrl"
+        class="input-field w-full p-4 rounded-xl"
+        placeholder="https://youtube.com/live/..."
+      />
+
     </div>
+
 
     <div id="uploadStatus" style="opacity: 0;"></div>
 
-    <button id="mintBtn" onclick="publishContent()" class="relative btn-glow w-full py-5 rounded-xl bg-cyan-500 text-black font-extrabold uppercase text-sm tracking-widest">
-      <span id="btnText">STAMP & MONETIZE</span>
-      
-      <svg id="progressSvg" class="hidden animate-spin h-5 w-5 text-black inline-block ml-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+
+    <button
+      id="mintBtn"
+      onclick="publishContent()"
+      class="relative btn-glow w-full py-5 rounded-xl bg-cyan-500 text-black font-extrabold uppercase text-sm tracking-widest"
+    >
+
+      <span id="btnText">
+        STAMP & MONETIZE
+      </span>
+
+      <svg
+        id="progressSvg"
+        class="hidden animate-spin h-5 w-5 text-black inline-block ml-2"
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+      >
+
+        <circle
+          class="opacity-25"
+          cx="12"
+          cy="12"
+          r="10"
+          stroke="currentColor"
+          stroke-width="4"
+        ></circle>
+
+        <path
+          class="opacity-75"
+          fill="currentColor"
+          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+        ></path>
+
       </svg>
+
     </button>
+
   </div>
+
 </div>
 
-    <!-- E-COMMERCE PRODUCT FORM -->
-    <div id="fab-product-form" class="hidden space-y-5">
-      <input id="productName" class="input-field w-full p-4 rounded-xl" placeholder="Product Name (e.g. Wireless Earbuds)"/>
-      <textarea id="productDesc" rows="3" class="input-field w-full p-4 rounded-xl resize-y" placeholder="Brief description..."></textarea>
-      
-      <div class="grid grid-cols-2 gap-4">
-        <input id="productPrice" type="number" class="input-field w-full p-4 rounded-xl" placeholder="Price (KES)"/>
-        <input id="productStock" type="number" value="50" class="input-field w-full p-4 rounded-xl" placeholder="Stock Qty"/>
-      </div>
 
-      <!-- Multiple Images -->
-      <div class="p-6 border-2 border-dashed border-white/10 rounded-2xl bg-white/5 text-center">
-        <input id="productImages" type="file" accept="image/*" multiple class="hidden" onchange="updateProductImagesName()"/>
-        <label for="productImages" id="productImagesLabel" class="cursor-pointer text-sm text-slate-400 block font-medium">
-          Upload Product Images (Max 5)
-        </label>
-      </div>
+<!-- ============================================================
+     IP REGISTRATION CATALOGUE
+     ============================================================ -->
 
-      <select id="productCategory" class="input-field w-full p-4 rounded-xl">
-        <option value="electronics">Electronics</option>
-        <option value="food">Food & Groceries</option>
-        <option value="fashion">Fashion & Beauty</option>
-        <option value="vehicles">Vehicles</option>
-        <option value="home">Home & Furniture</option>
-        <option value="other">Other</option>
-      </select>
+<div
+  id="fab-ip-registration-form"
+  class="hidden space-y-5"
+>
 
-      <button onclick="publishProduct()" 
-        class="w-full py-5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold uppercase text-sm tracking-widest btn-glow">
-        LIST TO STORE
-      </button>
+  <!-- HEADER -->
+
+  <div class="p-5 rounded-2xl border border-purple-500/20 bg-purple-500/5">
+
+    <div class="text-[9px] text-purple-400 font-black uppercase tracking-[0.35em] mb-2">
+      iNFLUENSA IP REGISTRY
     </div>
-  </div> 
-</div> <!-- fabModal ends HERE -->
 
-<!-- CID CERTIFICATE MODAL (STANDALONE) -->
-<div id="certModal" class="fixed inset-0 bg-black/95 backdrop-blur-2xl hidden z-50 flex items-center justify-center p-4">
-  <div id="certContent" class="glass p-8 w-full max-w-lg border-cyan-500/30 stamped-bg border-2 relative"></div>
+    <div class="text-xl font-black text-white uppercase tracking-tight">
+      Intellectual Property Registration
+    </div>
+
+    <p class="text-[10px] text-slate-500 mt-2 leading-relaxed">
+      Register and organize intellectual-property records with supporting
+      evidence and an independent IP-CID.
+    </p>
+
+  </div>
+
+
+  <!-- IP REGISTRATION TYPE -->
+
+  <div>
+
+    <label
+      class="block text-[10px] uppercase font-bold tracking-widest text-slate-400 mb-2"
+    >
+      IP Registration Type
+    </label>
+
+    <select
+      id="ipRegistrationType"
+      class="input-field w-full p-4 rounded-xl"
+      onchange="updateIPRegistrationFields()"
+    >
+
+      <option value="">
+        Select IP Type
+      </option>
+
+      <option value="brandlock">
+        BRANDLOCK — Trademarks
+      </option>
+
+      <option value="ipstamp">
+        IPSTAMP — Copyright
+      </option>
+
+      <option value="inventra">
+        INVENTRA — Patents
+      </option>
+
+      <option value="designvault">
+        DESIGNVAULT — Industrial Design
+      </option>
+
+      <option value="secretlock">
+        SECRETLOCK — Trade Secrets
+      </option>
+
+      <option value="loclock">
+        LOCLOCK — Geographical Indications (GI)
+      </option>
+
+      <option value="plantvarra">
+        PlantVarra — Plant Variety Protection
+      </option>
+
+      <option value="layolock">
+        LAYOLOCK — Integrated Circuit Layout
+      </option>
+
+    </select>
+
+  </div>
+
+
+  <!-- TITLE -->
+
+  <div>
+
+    <label
+      class="block text-[10px] uppercase font-bold tracking-widest text-slate-400 mb-2"
+    >
+      Title of IP
+    </label>
+
+    <input
+      id="ipTitle"
+      type="text"
+      class="input-field w-full p-4 rounded-xl"
+      placeholder="Enter the title of the intellectual property"
+      autocomplete="off"
+    />
+
+  </div>
+
+
+  <!-- OWNER -->
+
+  <div>
+
+    <label
+      class="block text-[10px] uppercase font-bold tracking-widest text-slate-400 mb-2"
+    >
+      Name of Owner
+    </label>
+
+    <input
+      id="ipOwnerName"
+      type="text"
+      class="input-field w-full p-4 rounded-xl"
+      placeholder="Full legal name of IP owner"
+      autocomplete="name"
+    />
+
+  </div>
+
+
+  <!-- NATIONAL IDENTIFICATION NUMBER -->
+
+  <div>
+
+    <label
+      class="block text-[10px] uppercase font-bold tracking-widest text-slate-400 mb-2"
+    >
+      National Identification Number
+    </label>
+
+    <input
+      id="ipOwnerNationalId"
+      type="text"
+      class="input-field w-full p-4 rounded-xl"
+      placeholder="National ID / Identification Number"
+      autocomplete="off"
+    />
+
+  </div>
+
+
+  <!-- DESCRIPTION -->
+
+  <div>
+
+    <label
+      class="block text-[10px] uppercase font-bold tracking-widest text-slate-400 mb-2"
+    >
+      Describe the Invention / IP
+    </label>
+
+    <textarea
+      id="ipDescription"
+      rows="7"
+      class="input-field w-full p-4 rounded-xl resize-y"
+      placeholder="Provide a detailed description of the invention, creation, design, mark, process, technology, or other intellectual property..."
+    ></textarea>
+
+  </div>
+
+
+  <!-- SUPPORTING FILES -->
+
+  <div
+    class="p-6 border-2 border-dashed border-white/10 rounded-2xl bg-white/5 text-center"
+  >
+
+    <input
+      id="ipSupportingFiles"
+      type="file"
+      class="hidden"
+      multiple
+      accept="
+        audio/*,
+        video/*,
+        image/*,
+        application/pdf,
+        text/*,
+        application/msword,
+        application/vnd.openxmlformats-officedocument.wordprocessingml.document,
+        application/vnd.ms-excel,
+        application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,
+        application/vnd.ms-powerpoint,
+        application/vnd.openxmlformats-officedocument.presentationml.presentation,
+        application/zip,
+        application/x-rar-compressed,
+        application/json,
+        application/xml,
+        application/octet-stream,
+        .mp3,.wav,.m4a,.mp4,.mov,.avi,.mkv,.webm,
+        .jpg,.jpeg,.png,.gif,.webp,.svg,
+        .pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.json,.xml,.zip,.rar,
+        .geojson,.kml,.kmz,.dwg,.dxf
+      "
+      onchange="updateIPSupportingFiles()"
+    />
+
+    <label
+      for="ipSupportingFiles"
+      class="cursor-pointer block"
+    >
+
+      <div class="text-slate-300 text-sm font-bold mb-2">
+        UPLOAD SUPPORTING DOCUMENTS & MEDIA
+      </div>
+
+      <div class="text-[11px] text-slate-500 leading-relaxed">
+        Drawings • Documents • Evidence • Specifications • Research • Audio • Video • Images • Maps • CAD • GIS
+      </div>
+
+      <div class="text-[10px] text-slate-600 mt-2">
+        Multiple files supported
+      </div>
+
+      <div
+        id="ipSupportingFilesName"
+        class="mt-4 text-[11px] text-cyan-400 hidden break-words"
+      ></div>
+
+    </label>
+
+  </div>
+
+
+  <!-- ORIGINAL CID -->
+
+  <div>
+
+    <label
+      class="block text-[10px] uppercase font-bold tracking-widest text-slate-400 mb-2"
+    >
+      Original CID
+    </label>
+
+    <input
+      id="ipOriginalCid"
+      type="text"
+      class="input-field w-full p-4 rounded-xl font-mono"
+      placeholder="Optional — link this IP to an existing CID"
+      autocomplete="off"
+    />
+
+    <p class="text-[9px] text-slate-600 mt-2">
+      Leave blank when registering a new standalone IP asset.
+    </p>
+
+  </div>
+
+
+  <!-- REGISTRANT -->
+
+  <input
+    id="ipRegistrant"
+    type="hidden"
+    value=""
+  />
+
+
+  <!-- STATUS -->
+
+  <div
+    id="ipRegistrationStatus"
+    class="hidden p-4 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-400"
+  ></div>
+
+
+  <!-- REGISTER BUTTON -->
+
+  <button
+    id="registerIPBtn"
+    type="button"
+    onclick="registerIP()"
+    class="relative w-full py-5 rounded-xl bg-purple-500 hover:bg-purple-400 text-white font-extrabold uppercase text-sm tracking-widest btn-glow transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+  >
+
+    <span id="registerIPBtnText">
+      REGISTER INTELLECTUAL PROPERTY
+    </span>
+
+    <svg
+      id="registerIPProgressSvg"
+      class="hidden animate-spin h-5 w-5 text-white inline-block ml-2"
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+    >
+
+      <circle
+        class="opacity-25"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        stroke-width="4"
+      ></circle>
+
+      <path
+        class="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+      ></path>
+
+    </svg>
+
+  </button>
+
 </div>
 
-<div id="watermark" class="fixed pointer-events-none opacity-[0.03] text-[8px] font-mono z-[1000] rotate-[-45deg] whitespace-nowrap hidden">
+
+<!-- ============================================================
+     E-COMMERCE PRODUCT FORM
+     EXISTING — KEEP
+     ============================================================ -->
+
+<div
+  id="fab-product-form"
+  class="hidden space-y-5"
+>
+
+  <input
+    id="productName"
+    class="input-field w-full p-4 rounded-xl"
+    placeholder="Product Name (e.g. Wireless Earbuds)"
+  />
+
+  <textarea
+    id="productDesc"
+    rows="3"
+    class="input-field w-full p-4 rounded-xl resize-y"
+    placeholder="Brief description..."
+  ></textarea>
+
+
+  <div class="grid grid-cols-2 gap-4">
+
+    <input
+      id="productPrice"
+      type="number"
+      class="input-field w-full p-4 rounded-xl"
+      placeholder="Price (KES)"
+    />
+
+    <input
+      id="productStock"
+      type="number"
+      value="50"
+      class="input-field w-full p-4 rounded-xl"
+      placeholder="Stock Qty"
+    />
+
+  </div>
+
+
+  <!-- Multiple Images -->
+
+  <div
+    class="p-6 border-2 border-dashed border-white/10 rounded-2xl bg-white/5 text-center"
+  >
+
+    <input
+      id="productImages"
+      type="file"
+      accept="image/*"
+      multiple
+      class="hidden"
+      onchange="updateProductImagesName()"
+    />
+
+    <label
+      for="productImages"
+      id="productImagesLabel"
+      class="cursor-pointer text-sm text-slate-400 block font-medium"
+    >
+      Upload Product Images (Max 5)
+    </label>
+
+  </div>
+
+
+  <select
+    id="productCategory"
+    class="input-field w-full p-4 rounded-xl"
+  >
+
+    <option value="electronics">
+      Electronics
+    </option>
+
+    <option value="food">
+      Food & Groceries
+    </option>
+
+    <option value="fashion">
+      Fashion & Beauty
+    </option>
+
+    <option value="vehicles">
+      Vehicles
+    </option>
+
+    <option value="home">
+      Home & Furniture
+    </option>
+
+    <option value="other">
+      Other
+    </option>
+
+  </select>
+
+
+  <button
+    onclick="publishProduct()"
+    class="w-full py-5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold uppercase text-sm tracking-widest btn-glow"
+  >
+    LIST TO STORE
+  </button>
+
+</div>
+
+</div>
+
+<!-- ============================================================
+     fabModal ends HERE
+     ============================================================ -->
+
+<!-- ============================================================
+     CID CERTIFICATE MODAL
+     EXISTING — KEEP
+     ============================================================ -->
+
+<div
+    id="certModal"
+    class="fixed inset-0 bg-black/95 backdrop-blur-2xl hidden z-50 flex items-center justify-center p-4"
+>
+    <div
+        id="certContent"
+        class="glass p-8 w-full max-w-lg border-cyan-500/30 stamped-bg border-2 relative"
+    ></div>
+</div>
+
+
+<!-- ============================================================
+     IP CID CERTIFICATE MODAL
+     NEW — FOR IP REGISTRATIONS
+     ============================================================ -->
+
+<div
+    id="ipCidCertificateModal"
+    class="fixed inset-0 bg-black/95 backdrop-blur-2xl hidden z-[60] flex items-center justify-center p-4"
+>
+    <div
+        id="ipCidCertificateContent"
+        class="glass p-8 w-full max-w-lg border-purple-500/30 stamped-bg border-2 relative"
+    ></div>
+</div>
+
+
+<!-- ============================================================
+     WATERMARK
+     EXISTING — KEEP
+     ============================================================ -->
+
+<div
+    id="watermark"
+    class="fixed pointer-events-none opacity-[0.03] text-[8px] font-mono z-[1000] rotate-[-45deg] whitespace-nowrap hidden"
+>
     INFLUENSA_IP_SECURED_BY_AFROFUTURIST_PROTOCOL_NO_PIRACY_ALLOWED
 </div>
 
@@ -2054,7 +2613,6 @@ function resetUnlockBtn(btn, text) {
     btn.innerText = text;
     btn.disabled = false;
 }
-
 async function publishContent() {
   const btn = document.getElementById("mintBtn");
   const progressCircle = document.getElementById("progressCircle");
@@ -2170,6 +2728,7 @@ async function publishContent() {
   }
 }
 
+
 // ==================== FAB MODAL ENHANCED ====================
 let currentFabMode = 'ip';
 
@@ -2177,33 +2736,102 @@ function setFabMode(mode) {
     currentFabMode = mode;
     
     // Update title
-    document.getElementById('fabModalTitle').textContent = 
-        mode === 'ip' ? "Mint Global IP" : "List New Product";
+    const modalTitle = document.getElementById('fabModalTitle');
+
+    if (modalTitle) {
+        if (mode === 'ip') {
+            modalTitle.textContent = "Mint Global IP";
+        } else if (mode === 'ip-registration') {
+            modalTitle.textContent = "IP Registration Catalogue";
+        } else if (mode === 'product') {
+            modalTitle.textContent = "List New Product";
+        }
+    }
     
     // Toggle forms
-    document.getElementById('fab-ip-form').classList.toggle('hidden', mode !== 'ip');
-    document.getElementById('fab-product-form').classList.toggle('hidden', mode !== 'product');
+    const ipForm = document.getElementById('fab-ip-form');
+
+    if (ipForm) {
+        ipForm.classList.toggle(
+            'hidden',
+            mode !== 'ip'
+        );
+    }
+
+    // NEW: IP Registration form
+    const ipRegistrationForm =
+        document.getElementById('fab-ip-registration-form');
+
+    if (ipRegistrationForm) {
+        ipRegistrationForm.classList.toggle(
+            'hidden',
+            mode !== 'ip-registration'
+        );
+    }
+
+    // Existing Product form
+    const productForm =
+        document.getElementById('fab-product-form');
+
+    if (productForm) {
+        productForm.classList.toggle(
+            'hidden',
+            mode !== 'product'
+        );
+    }
     
     // Style buttons
-    const ipBtn = document.getElementById('fab-ip-btn');
-    const productBtn = document.getElementById('fab-product-btn');
-    
-    if (ipBtn && productBtn) {
-        ipBtn.classList.toggle('bg-yellow-500', mode === 'ip');
-        ipBtn.classList.toggle('text-black', mode === 'ip');
-        ipBtn.classList.toggle('text-slate-400', mode !== 'ip');
-        
-        productBtn.classList.toggle('bg-yellow-500', mode === 'product');
-        productBtn.classList.toggle('text-black', mode === 'product');
-        productBtn.classList.toggle('text-slate-400', mode !== 'ip');
-    }
+    const ipBtn =
+        document.getElementById('fab-ip-btn');
+
+    const ipRegistrationBtn =
+        document.getElementById('fab-ip-registration-btn');
+
+    const productBtn =
+        document.getElementById('fab-product-btn');
+
+    const setActive = (button, active) => {
+        if (!button) return;
+
+        button.classList.toggle(
+            'bg-yellow-500',
+            active
+        );
+
+        button.classList.toggle(
+            'text-black',
+            active
+        );
+
+        button.classList.toggle(
+            'text-slate-400',
+            !active
+        );
+    };
+
+    setActive(
+        ipBtn,
+        mode === 'ip'
+    );
+
+    setActive(
+        ipRegistrationBtn,
+        mode === 'ip-registration'
+    );
+
+    setActive(
+        productBtn,
+        mode === 'product'
+    );
 }
+
 
 function updateProductImageName() {
     const file = document.getElementById("productImage").files[0];
     const label = document.getElementById("productImageLabel");
     if (label) label.innerText = file ? file.name : "Upload Product Image";
 }
+
 
 async function publishProduct() {
     const name = document.getElementById("productName").value.trim();
@@ -2260,6 +2888,529 @@ async function publishProduct() {
         if (btn) {
             btn.disabled = false;
             btn.innerText = "LIST TO STORE";
+        }
+    }
+}
+
+
+// ============================================================
+// IP REGISTRATION CATALOGUE
+// ============================================================
+
+function updateIPSupportingFiles() {
+    const input =
+        document.getElementById("ipSupportingFiles");
+
+    const display =
+        document.getElementById("ipSupportingFilesName");
+
+    if (!input || !display) return;
+
+    const files =
+        Array.from(input.files || []);
+
+    if (files.length === 0) {
+        display.classList.add("hidden");
+        display.innerHTML = "";
+        return;
+    }
+
+    const totalSize =
+        files.reduce(
+            (total, file) => total + file.size,
+            0
+        );
+
+    function formatFileSize(bytes) {
+        if (bytes < 1024) {
+            return `${bytes} B`;
+        }
+
+        if (bytes < 1024 * 1024) {
+            return `${(bytes / 1024).toFixed(1)} KB`;
+        }
+
+        if (bytes < 1024 * 1024 * 1024) {
+            return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+        }
+
+        return `${(
+            bytes /
+            (1024 * 1024 * 1024)
+        ).toFixed(2)} GB`;
+    }
+
+    display.classList.remove("hidden");
+
+    display.innerHTML = `
+        <div class="font-bold text-cyan-400 mb-2">
+            ${files.length}
+            file${files.length !== 1 ? "s" : ""}
+            selected
+        </div>
+
+        <div class="text-slate-500 mb-3">
+            Total size: ${formatFileSize(totalSize)}
+        </div>
+
+        <div class="space-y-1 text-left max-h-32 overflow-y-auto">
+            ${files.map((file, index) => `
+                <div
+                    class="flex items-center justify-between gap-3 bg-black/20 px-3 py-2 rounded-lg"
+                >
+                    <span class="truncate text-slate-300">
+                        ${index + 1}.
+                        ${escapeHTML(file.name)}
+                    </span>
+
+                    <span class="text-slate-600 shrink-0">
+                        ${formatFileSize(file.size)}
+                    </span>
+                </div>
+            `).join("")}
+        </div>
+    `;
+}
+
+
+function escapeHTML(value) {
+    return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+
+function updateIPRegistrationFields() {
+
+    const type =
+        document.getElementById(
+            "ipRegistrationType"
+        )?.value;
+
+    const description =
+        document.getElementById(
+            "ipDescription"
+        );
+
+    if (!description) return;
+
+    const descriptions = {
+
+        brandlock:
+            "Describe the trademark, brand, logo, name, symbol, slogan, or other mark.",
+
+        ipstamp:
+            "Describe the original creative work, including its authorship, content, medium, and supporting evidence.",
+
+        inventra:
+            "Describe the invention, technical problem, solution, components, operation, and novel features.",
+
+        designvault:
+            "Describe the industrial design, appearance, configuration, shape, pattern, or ornamentation.",
+
+        secretlock:
+            "Describe the confidential information, process, formula, method, technology, or business information.",
+
+        loclock:
+            "Describe the geographical indication, geographical area, product characteristics, and connection to that location.",
+
+        plantvarra:
+            "Describe the plant variety, distinguishing characteristics, origin, breeding information, and supporting evidence.",
+
+        layolock:
+            "Describe the integrated circuit layout-design, structure, components, and technical characteristics."
+    };
+
+    description.placeholder =
+        type && descriptions[type]
+            ? descriptions[type]
+            : "Provide a detailed description of the invention, creation, design, mark, process, technology, or other intellectual property...";
+}
+
+
+async function registerIP() {
+
+    const btn =
+        document.getElementById(
+            "registerIPBtn"
+        );
+
+    const btnText =
+        document.getElementById(
+            "registerIPBtnText"
+        );
+
+    const progressSvg =
+        document.getElementById(
+            "registerIPProgressSvg"
+        );
+
+    const status =
+        document.getElementById(
+            "ipRegistrationStatus"
+        );
+
+
+    const ipType =
+        document.getElementById(
+            "ipRegistrationType"
+        )?.value.trim();
+
+    const title =
+        document.getElementById(
+            "ipTitle"
+        )?.value.trim();
+
+    const ownerName =
+        document.getElementById(
+            "ipOwnerName"
+        )?.value.trim();
+
+    const nationalId =
+        document.getElementById(
+            "ipOwnerNationalId"
+        )?.value.trim();
+
+    const description =
+        document.getElementById(
+            "ipDescription"
+        )?.value.trim();
+
+    const originalCid =
+        document.getElementById(
+            "ipOriginalCid"
+        )?.value.trim();
+
+    const registrant =
+        document.getElementById(
+            "ipRegistrant"
+        )?.value.trim();
+
+    const fileInput =
+        document.getElementById(
+            "ipSupportingFiles"
+        );
+
+    const files =
+        Array.from(
+            fileInput?.files || []
+        );
+
+
+    // ========================================================
+    // VALIDATION
+    // ========================================================
+
+    if (!ipType) {
+        return alert(
+            "Please select an IP registration type."
+        );
+    }
+
+    if (!title) {
+        return alert(
+            "IP title is required."
+        );
+    }
+
+    if (!ownerName) {
+        return alert(
+            "Owner name is required."
+        );
+    }
+
+    if (!description) {
+        return alert(
+            "IP description is required."
+        );
+    }
+
+    if (files.length === 0) {
+        return alert(
+            "Please upload at least one supporting file."
+        );
+    }
+
+
+    // ========================================================
+    // FORM DATA
+    // ========================================================
+
+    const formData =
+        new FormData();
+
+    formData.append(
+        "ipType",
+        ipType
+    );
+
+    formData.append(
+        "title",
+        title
+    );
+
+    formData.append(
+        "ownerName",
+        ownerName
+    );
+
+    formData.append(
+        "nationalId",
+        nationalId
+    );
+
+    formData.append(
+        "description",
+        description
+    );
+
+    formData.append(
+        "originalCid",
+        originalCid
+    );
+
+    formData.append(
+        "registrant",
+        registrant
+    );
+
+
+    // ========================================================
+    // LOGGED-IN USER
+    // ========================================================
+
+    if (
+        !registrant &&
+        typeof currentUser !== "undefined" &&
+        currentUser?.identity
+    ) {
+        formData.set(
+            "registrant",
+            currentUser.identity
+        );
+    }
+
+
+    // ========================================================
+    // SUPPORTING FILES
+    // ========================================================
+
+    files.forEach(file => {
+
+        formData.append(
+            "ipSupportingFiles",
+            file
+        );
+
+    });
+
+
+    // ========================================================
+    // UI STATE
+    // ========================================================
+
+    if (btn) {
+        btn.disabled = true;
+    }
+
+    if (btnText) {
+        btnText.innerText =
+            "REGISTERING IP...";
+    }
+
+    if (progressSvg) {
+        progressSvg.classList.remove(
+            "hidden"
+        );
+    }
+
+
+    if (status) {
+
+        status.classList.remove(
+            "hidden"
+        );
+
+        status.className =
+            "p-4 rounded-xl bg-white/5 border border-purple-500/20 text-sm text-purple-300";
+
+        status.innerText =
+            "Uploading supporting evidence and creating IP registration...";
+    }
+
+
+    // ========================================================
+    // SEND TO BACKEND
+    // ========================================================
+
+    try {
+
+        const res =
+            await fetch(
+                `${API_URL}/ip/register`,
+                {
+                    method: "POST",
+                    body: formData
+                }
+            );
+
+
+        let data = {};
+
+        try {
+            data = await res.json();
+        } catch (_) {}
+
+
+        // ====================================================
+        // SUCCESS
+        // ====================================================
+
+        if (
+            res.status === 201 &&
+            data.success
+        ) {
+
+            if (status) {
+
+                status.className =
+                    "p-4 rounded-xl bg-green-500/10 border border-green-500/20 text-sm text-green-400";
+
+                status.innerHTML = `
+
+                    <div class="font-black uppercase mb-1">
+                        IP Registration Successful
+                    </div>
+
+                    <div class="text-xs">
+                        IP-CID:
+
+                        <span class="font-mono text-cyan-400">
+                            ${escapeHTML(data.ipCid)}
+                        </span>
+                    </div>
+
+                    <div class="text-xs mt-1">
+                        Files:
+                        ${data.fileCount || files.length}
+                    </div>
+
+                `;
+            }
+
+
+            showToast(
+                `IP Registered — ${data.ipCid}`
+            );
+
+
+            // Existing optional IP-CID certificate viewer
+            if (
+                typeof viewIPCID ===
+                "function"
+            ) {
+
+                viewIPCID(data);
+
+            }
+
+            return;
+        }
+
+
+        // ====================================================
+        // DUPLICATE REGISTRATION
+        // ====================================================
+
+        if (res.status === 409) {
+
+            const duplicateMessage =
+                data.message ||
+                "This IP registration already exists.";
+
+            alert(
+                `${duplicateMessage}${
+                    data.ipCid
+                        ? `\n\nExisting IP-CID: ${data.ipCid}`
+                        : ""
+                }`
+            );
+
+
+            if (status) {
+
+                status.className =
+                    "p-4 rounded-xl bg-yellow-500/10 border border-yellow-500/20 text-sm text-yellow-400";
+
+                status.innerText =
+                    duplicateMessage;
+            }
+
+            return;
+        }
+
+
+        // ====================================================
+        // OTHER SERVER ERROR
+        // ====================================================
+
+        const message =
+            data.message ||
+            data.error ||
+            "IP registration failed.";
+
+        alert(message);
+
+
+        if (status) {
+
+            status.className =
+                "p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-sm text-red-400";
+
+            status.innerText =
+                message;
+        }
+
+
+    } catch (error) {
+
+        console.error(
+            "IP registration error:",
+            error
+        );
+
+        alert(
+            "Mesh Network Error while registering IP."
+        );
+
+
+        if (status) {
+
+            status.className =
+                "p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-sm text-red-400";
+
+            status.innerText =
+                "Network error while registering IP.";
+        }
+
+    } finally {
+
+        if (btn) {
+            btn.disabled = false;
+        }
+
+        if (btnText) {
+            btnText.innerText =
+                "REGISTER INTELLECTUAL PROPERTY";
+        }
+
+        if (progressSvg) {
+            progressSvg.classList.add(
+                "hidden"
+            );
         }
     }
 }
