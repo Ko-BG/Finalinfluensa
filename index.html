@@ -4716,59 +4716,546 @@ function viewCID(postId) {
 async function shareAndDownload(postId, price) {
     if(confirm(`Confirm Premium License for KES ${10.0*price}?`)) await unlockIP(postId, 'share_download');
 }
+async function viewRegisteredIP(ip) {
+
+    try {
+
+        const registrationId =
+            ip._id ||
+            ip.id ||
+            ip.registrationId;
+
+        if (!registrationId) {
+            alert('Unable to view this IP registration.');
+            return;
+        }
+
+        // Phone number is already associated with the logged-in
+        // iNFLUENSA user. Use the existing authenticated user data.
+        const phone =
+            window.userPhone ||
+            window.currentUser?.phone ||
+            window.user?.phone ||
+            localStorage.getItem('userPhone');
+
+        if (!phone) {
+            alert('Your M-Pesa phone number could not be found. Please log in again.');
+            return;
+        }
+
+        // --------------------------------------------------------
+        // CHECK ACCESS
+        // --------------------------------------------------------
+
+        const accessResponse = await fetch(
+            `${API_URL}/ip/registrations/${encodeURIComponent(registrationId)}/access?phone=${encodeURIComponent(phone)}`,
+            {
+                method: 'GET',
+                credentials: 'include'
+            }
+        );
+
+        // --------------------------------------------------------
+        // ALREADY PAID — SHOW RECORD
+        // --------------------------------------------------------
+
+        if (accessResponse.ok) {
+
+            const data = await accessResponse.json();
+
+            if (
+                !data.success ||
+                !data.paid ||
+                !data.registration
+            ) {
+                alert('Unable to load this IP registration.');
+                return;
+            }
+
+            const registration = data.registration;
+
+            const existingModal =
+                document.getElementById('ipViewModal');
+
+            if (existingModal) {
+                existingModal.remove();
+            }
+
+            const modal = document.createElement('div');
+
+            modal.id = 'ipViewModal';
+
+            modal.style.cssText = `
+                position: fixed;
+                inset: 0;
+                z-index: 99999;
+                background: rgba(0,0,0,0.85);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 20px;
+            `;
+
+            modal.innerHTML = `
+                <div
+                    style="
+                        background: white;
+                        color: #111;
+                        width: 100%;
+                        max-width: 700px;
+                        max-height: 90vh;
+                        overflow-y: auto;
+                        border-radius: 16px;
+                        padding: 28px;
+                        position: relative;
+                    "
+                >
+
+                    <button
+                        onclick="document.getElementById('ipViewModal').remove()"
+                        style="
+                            position: absolute;
+                            top: 15px;
+                            right: 18px;
+                            border: none;
+                            background: none;
+                            font-size: 28px;
+                            cursor: pointer;
+                        "
+                    >
+                        ×
+                    </button>
+
+                    <h2
+                        style="
+                            font-size: 24px;
+                            font-weight: 700;
+                            margin-bottom: 20px;
+                        "
+                    >
+                        IP Registration Record
+                    </h2>
+
+                    <div
+                        style="
+                            background: #f5f5f5;
+                            border-radius: 10px;
+                            padding: 15px;
+                            margin-bottom: 20px;
+                        "
+                    >
+
+                        <div
+                            style="
+                                font-size: 12px;
+                                color: #666;
+                                margin-bottom: 5px;
+                            "
+                        >
+                            IP-CID
+                        </div>
+
+                        <div
+                            style="
+                                font-family: monospace;
+                                font-size: 18px;
+                                font-weight: 700;
+                                letter-spacing: 1px;
+                            "
+                        >
+                            ${escapeHTML(registration.ipCid || 'N/A')}
+                        </div>
+
+                        <div
+                            style="
+                                font-size: 12px;
+                                color: #777;
+                                margin-top: 6px;
+                            "
+                        >
+                            Only the final 7 characters are displayed.
+                        </div>
+
+                    </div>
+
+                    <div
+                        style="
+                            display: grid;
+                            gap: 14px;
+                        "
+                    >
+
+                        <div>
+                            <strong>CID:</strong>
+                            ${escapeHTML(registration.cid || 'N/A')}
+                        </div>
+
+                        <div>
+                            <strong>IP Type:</strong>
+                            ${escapeHTML(registration.ipType || 'N/A')}
+                        </div>
+
+                        <div>
+                            <strong>Title:</strong>
+                            ${escapeHTML(registration.title || 'N/A')}
+                        </div>
+
+                        <div>
+                            <strong>Owner:</strong>
+                            ${escapeHTML(registration.ownerName || 'N/A')}
+                        </div>
+
+                        <div>
+                            <strong>Description:</strong>
+
+                            <div
+                                style="
+                                    margin-top: 5px;
+                                    white-space: pre-wrap;
+                                "
+                            >
+                                ${escapeHTML(registration.description || 'N/A')}
+                            </div>
+
+                        </div>
+
+                        <div>
+                            <strong>Registrant:</strong>
+                            ${escapeHTML(registration.registrant || 'N/A')}
+                        </div>
+
+                        <div>
+                            <strong>Status:</strong>
+                            ${escapeHTML(registration.status || 'N/A')}
+                        </div>
+
+                        <div>
+                            <strong>Content Fingerprint:</strong>
+
+                            <div
+                                style="
+                                    margin-top: 5px;
+                                    font-family: monospace;
+                                    word-break: break-all;
+                                    font-size: 13px;
+                                "
+                            >
+                                ${escapeHTML(
+                                    registration.contentHash || 'N/A'
+                                )}
+                            </div>
+
+                        </div>
+
+                        <div>
+                            <strong>Files:</strong>
+                            ${escapeHTML(registration.fileCount || 0)}
+                        </div>
+
+                        <div>
+                            <strong>Registered:</strong>
+                            ${escapeHTML(
+                                registration.registeredAt ||
+                                registration.createdAt ||
+                                'N/A'
+                            )}
+                        </div>
+
+                    </div>
+
+                </div>
+            `;
+
+            document.body.appendChild(modal);
+
+            return;
+        }
+
+        // --------------------------------------------------------
+        // PAYMENT REQUIRED — AUTOMATIC STK PUSH
+        // --------------------------------------------------------
+
+        if (accessResponse.status === 402) {
+
+            const paymentData =
+                await accessResponse.json().catch(() => ({}));
+
+            const amount =
+                paymentData.amount || 10;
+
+            const currency =
+                paymentData.currency || 'KES';
+
+            const confirmPayment = confirm(
+                `Unlock this IP registration for ${currency} ${amount}?\n\n` +
+                `An M-Pesa STK Push will be sent to your registered phone number.\n\n` +
+                `Tap OK, then enter your M-Pesa PIN on your phone.`
+            );
+
+            if (!confirmPayment) {
+                return;
+            }
+
+            // ----------------------------------------------------
+            // AUTOMATIC STK PUSH
+            // ----------------------------------------------------
+
+            const paymentResponse = await fetch(
+                `${API_URL}/ip/access/pay`,
+                {
+                    method: 'POST',
+
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+
+                    credentials: 'include',
+
+                    body: JSON.stringify({
+                        phone: phone,
+                        ipRegistrationID: registrationId
+                    })
+                }
+            );
+
+            const paymentResult =
+                await paymentResponse.json().catch(() => ({}));
+
+            if (
+                !paymentResponse.ok ||
+                !paymentResult.success
+            ) {
+                throw new Error(
+                    paymentResult.error ||
+                    paymentResult.message ||
+                    'Unable to initiate IP access payment.'
+                );
+            }
+
+            // ----------------------------------------------------
+            // WAIT FOR USER TO ENTER M-PESA PIN
+            // ----------------------------------------------------
+
+            alert(
+                `STK Push sent to your registered M-Pesa number.\n\n` +
+                `Enter your M-Pesa PIN on your phone to complete the ${currency} ${amount} payment.`
+            );
+
+            return;
+        }
+
+        // --------------------------------------------------------
+        // OTHER ERROR
+        // --------------------------------------------------------
+
+        const errorData =
+            await accessResponse.json().catch(() => ({}));
+
+        throw new Error(
+            errorData.error ||
+            errorData.message ||
+            `Unable to access IP registration: ${accessResponse.status}`
+        );
+
+    } catch (error) {
+
+        console.error(
+            '❌ IP VIEW ERROR:',
+            error
+        );
+
+        alert(
+            error.message ||
+            'Unable to view this IP registration.'
+        );
+    }
+}
 async function downloadIPCID(ip) {
 
-  try {
+    try {
 
-    const registrationId =
-      ip._id ||
-      ip.id ||
-      ip.registrationId;
+        const registrationId =
+            ip._id ||
+            ip.id ||
+            ip.registrationId;
 
-    if (!registrationId) {
-      alert('IP-CID download is not available for this registration.');
-      return;
+        if (!registrationId) {
+            alert('IP-CID download is not available for this registration.');
+            return;
+        }
+
+        // Use the M-Pesa number already associated with the logged-in user
+        const phone =
+            window.userPhone ||
+            window.currentUser?.phone ||
+            window.user?.phone ||
+            localStorage.getItem('userPhone');
+
+        if (!phone) {
+            alert('Your M-Pesa phone number could not be found. Please log in again.');
+            return;
+        }
+
+        // --------------------------------------------------------
+        // CHECK WHETHER ACCESS HAS ALREADY BEEN PAID
+        // --------------------------------------------------------
+
+        const accessResponse = await fetch(
+            `${API_URL}/ip/registrations/${encodeURIComponent(registrationId)}/access?phone=${encodeURIComponent(phone)}`,
+            {
+                method: 'GET',
+                credentials: 'include'
+            }
+        );
+
+        // --------------------------------------------------------
+        // ALREADY PAID — DOWNLOAD CID
+        // --------------------------------------------------------
+
+        if (accessResponse.ok) {
+
+            const accessData = await accessResponse.json();
+
+            if (
+                accessData.success &&
+                accessData.paid
+            ) {
+
+                const downloadResponse = await fetch(
+                    `${API_URL}/ip/registrations/${encodeURIComponent(registrationId)}/ipcid/download?phone=${encodeURIComponent(phone)}`,
+                    {
+                        method: 'GET',
+                        credentials: 'include'
+                    }
+                );
+
+                if (!downloadResponse.ok) {
+                    throw new Error(
+                        `IP-CID download failed: ${downloadResponse.status}`
+                    );
+                }
+
+                const blob = await downloadResponse.blob();
+
+                const downloadUrl =
+                    window.URL.createObjectURL(blob);
+
+                const link =
+                    document.createElement('a');
+
+                link.href = downloadUrl;
+
+                link.download =
+                    `IP-CID-${registrationId}.txt`;
+
+                document.body.appendChild(link);
+
+                link.click();
+
+                link.remove();
+
+                window.URL.revokeObjectURL(downloadUrl);
+
+                return;
+            }
+        }
+
+        // --------------------------------------------------------
+        // PAYMENT REQUIRED — AUTOMATIC STK PUSH
+        // --------------------------------------------------------
+
+        if (accessResponse.status === 402) {
+
+            const paymentData =
+                await accessResponse.json().catch(() => ({}));
+
+            const amount =
+                paymentData.amount || 10;
+
+            const currency =
+                paymentData.currency || 'KES';
+
+            const confirmPayment = confirm(
+                `Download this IP-CID for ${currency} ${amount}?\n\n` +
+                `An M-Pesa STK Push will be sent to your registered phone number.\n\n` +
+                `Tap OK, then enter your M-Pesa PIN on your phone.`
+            );
+
+            if (!confirmPayment) {
+                return;
+            }
+
+            // ----------------------------------------------------
+            // AUTOMATIC STK PUSH
+            // ----------------------------------------------------
+
+            const paymentResponse = await fetch(
+                `${API_URL}/ip/access/pay`,
+                {
+                    method: 'POST',
+
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+
+                    credentials: 'include',
+
+                    body: JSON.stringify({
+                        phone: phone,
+                        ipRegistrationID: registrationId
+                    })
+                }
+            );
+
+            const paymentResult =
+                await paymentResponse.json().catch(() => ({}));
+
+            if (
+                !paymentResponse.ok ||
+                !paymentResult.success
+            ) {
+                throw new Error(
+                    paymentResult.error ||
+                    paymentResult.message ||
+                    'Unable to initiate IP-CID payment.'
+                );
+            }
+
+            alert(
+                `STK Push sent to your registered M-Pesa number.\n\n` +
+                `Enter your M-Pesa PIN on your phone to complete the ` +
+                `${currency} ${amount} payment.\n\n` +
+                `After payment is confirmed, tap Download again.`
+            );
+
+            return;
+        }
+
+        // --------------------------------------------------------
+        // OTHER ERROR
+        // --------------------------------------------------------
+
+        const errorData =
+            await accessResponse.json().catch(() => ({}));
+
+        throw new Error(
+            errorData.error ||
+            errorData.message ||
+            `Unable to verify IP access: ${accessResponse.status}`
+        );
+
+    } catch (error) {
+
+        console.error(
+            '❌ IP-CID DOWNLOAD ERROR:',
+            error
+        );
+
+        alert(
+            error.message ||
+            'Unable to download the IP-CID.'
+        );
     }
-
-    /*
-     * Backend should generate the IP-CID certificate/document
-     * and return a secure download URL.
-     */
-
-    const response = await fetch(
-      `${API_URL}/ip/registrations/${encodeURIComponent(registrationId)}/ipcid/download`,
-      {
-        method: 'GET',
-        credentials: 'include'
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error(`IP-CID download failed: ${response.status}`);
-    }
-
-    const data = await response.json();
-
-    if (data.downloadUrl) {
-      window.open(data.downloadUrl, '_blank');
-      return;
-    }
-
-    if (data.url) {
-      window.open(data.url, '_blank');
-      return;
-    }
-
-    alert('IP-CID download link was not returned by the server.');
-
-  } catch (error) {
-
-    console.error('❌ IP-CID download error:', error);
-
-    alert('Unable to download the IP-CID.');
-
-  }
-
 }
 function requestWithdrawal() {
     document.getElementById('withdrawalModal').classList.remove('hidden');
