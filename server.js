@@ -7736,15 +7736,21 @@ app.get('/api/ip/registrations', async (req, res) => {
     }
 });
 // ============================================================
-// IP ACCESS — VIEW FULL RECORD AFTER PAYMENT
+// IP ACCESS — VIEW MASKED RECORD AFTER PAYMENT
 // ============================================================
 
 app.get('/api/ip/registrations/:id/access', async (req, res) => {
     try {
         const registrationId = req.params.id;
 
-        // Use the authenticated user's existing M-Pesa number
-        const phone = req.user?.userPhone;
+        const userId = req.user?._id;
+
+        if (!userId) {
+            return res.status(401).json({
+                success: false,
+                error: "AUTHENTICATION_REQUIRED"
+            });
+        }
 
         if (!registrationId) {
             return res.status(400).json({
@@ -7753,10 +7759,31 @@ app.get('/api/ip/registrations/:id/access', async (req, res) => {
             });
         }
 
+        // Registered M-Pesa number is stored in User.identity
+        const user = await User.findById(userId).lean();
+
+        if (!user) {
+            return res.status(401).json({
+                success: false,
+                error: "USER_NOT_FOUND"
+            });
+        }
+
+        const phone = user.identity;
+
         if (!phone) {
             return res.status(401).json({
                 success: false,
                 error: "MPESA_PHONE_NOT_FOUND"
+            });
+        }
+
+        const cleanedPhone = cleanPhone(phone);
+
+        if (!cleanedPhone) {
+            return res.status(401).json({
+                success: false,
+                error: "INVALID_MPESA_PHONE"
             });
         }
 
@@ -7772,7 +7799,7 @@ app.get('/api/ip/registrations/:id/access', async (req, res) => {
 
         const paid = await hasPaidForIPAccess(
             registrationId,
-            phone
+            cleanedPhone
         );
 
         if (!paid) {
@@ -7813,7 +7840,6 @@ app.get('/api/ip/registrations/:id/access', async (req, res) => {
         });
 
     } catch (error) {
-
         console.error("❌ IP ACCESS ERROR:", error);
 
         return res.status(500).json({
@@ -7829,16 +7855,14 @@ app.get('/api/ip/registrations/:id/access', async (req, res) => {
 
 app.post("/api/ip/access/pay", async (req, res) => {
     try {
-
         const { ipRegistrationID } = req.body;
 
-        const phone = req.user?.userPhone;
+        const userId = req.user?._id;
 
-        if (!phone) {
+        if (!userId) {
             return res.status(401).json({
                 success: false,
-                error: "USER_PHONE_NOT_FOUND",
-                message: "Your registered M-Pesa phone number could not be found. Please log in again."
+                error: "AUTHENTICATION_REQUIRED"
             });
         }
 
@@ -7849,26 +7873,47 @@ app.post("/api/ip/access/pay", async (req, res) => {
             });
         }
 
-        const result =
-            await triggerUniversalIPAccess(
-                phone,
-                ipRegistrationID
-            );
+        const user = await User.findById(userId).lean();
+
+        if (!user) {
+            return res.status(401).json({
+                success: false,
+                error: "USER_NOT_FOUND"
+            });
+        }
+
+        // Registered M-Pesa phone is stored in identity
+        const phone = user.identity;
+
+        if (!phone) {
+            return res.status(401).json({
+                success: false,
+                error: "MPESA_PHONE_NOT_FOUND"
+            });
+        }
+
+        const cleanedPhone = cleanPhone(phone);
+
+        if (!cleanedPhone) {
+            return res.status(401).json({
+                success: false,
+                error: "INVALID_MPESA_PHONE"
+            });
+        }
+
+        const result = await triggerUniversalIPAccess(
+            cleanedPhone,
+            ipRegistrationID
+        );
 
         return res.json(result);
 
     } catch (error) {
-
-        console.error(
-            "❌ IP ACCESS PAYMENT ROUTE:",
-            error
-        );
+        console.error("❌ IP ACCESS PAYMENT ROUTE:", error);
 
         return res.status(500).json({
             success: false,
-            error:
-                error.message ||
-                "IP_ACCESS_PAYMENT_FAILED"
+            error: error.message || "IP_ACCESS_PAYMENT_FAILED"
         });
     }
 });
@@ -7878,11 +7923,16 @@ app.post("/api/ip/access/pay", async (req, res) => {
 
 app.get('/api/ip/registrations/:id/ipcid/download', async (req, res) => {
     try {
-
         const registrationId = req.params.id;
 
-        // Same authenticated M-Pesa number
-        const phone = req.user?.userPhone;
+        const userId = req.user?._id;
+
+        if (!userId) {
+            return res.status(401).json({
+                success: false,
+                error: "AUTHENTICATION_REQUIRED"
+            });
+        }
 
         if (!registrationId) {
             return res.status(400).json({
@@ -7891,10 +7941,31 @@ app.get('/api/ip/registrations/:id/ipcid/download', async (req, res) => {
             });
         }
 
+        // Registered M-Pesa phone is stored in User.identity
+        const user = await User.findById(userId).lean();
+
+        if (!user) {
+            return res.status(401).json({
+                success: false,
+                error: "USER_NOT_FOUND"
+            });
+        }
+
+        const phone = user.identity;
+
         if (!phone) {
             return res.status(401).json({
                 success: false,
                 error: "MPESA_PHONE_NOT_FOUND"
+            });
+        }
+
+        const cleanedPhone = cleanPhone(phone);
+
+        if (!cleanedPhone) {
+            return res.status(401).json({
+                success: false,
+                error: "INVALID_MPESA_PHONE"
             });
         }
 
@@ -7910,7 +7981,7 @@ app.get('/api/ip/registrations/:id/ipcid/download', async (req, res) => {
 
         const paid = await hasPaidForIPAccess(
             registrationId,
-            phone
+            cleanedPhone
         );
 
         if (!paid) {
@@ -7943,7 +8014,6 @@ app.get('/api/ip/registrations/:id/ipcid/download', async (req, res) => {
         return res.send(registration.ipCid);
 
     } catch (error) {
-
         console.error("❌ IP-CID DOWNLOAD ERROR:", error);
 
         return res.status(500).json({
