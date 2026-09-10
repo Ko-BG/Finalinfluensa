@@ -7695,29 +7695,36 @@ app.post(
 );
 app.get('/api/ip/registrations', async (req, res) => {
     try {
-
-        console.log('📚 IP CATALOGUE REQUEST');
-
         const registrations = await IPRegistration.find({})
-            .select(
-                '_id ipCid ipType title ownerName description status fileCount createdAt registeredAt'
-            )
+            .select('_id ipCid ipType title ownerName description status fileCount createdAt registeredAt')
             .sort({ createdAt: -1 })
             .lean();
 
-        console.log(
-            `📚 IP CATALOGUE: ${registrations.length} registrations found`
-        );
+        const publicRegistrations = registrations.map(ip => ({
+            _id: ip._id,
+            ipType: ip.ipType,
+            title: ip.title,
+            ownerName: ip.ownerName,
+            description: ip.description,
+            status: ip.status,
+            fileCount: ip.fileCount,
+            createdAt: ip.createdAt,
+            registeredAt: ip.registeredAt,
+
+            // NEVER expose the full IP-CID publicly
+            ipCid: ip.ipCid
+                ? `••••••••••••••••••••••${String(ip.ipCid).slice(-7)}`
+                : null
+        }));
 
         return res.json({
             success: true,
-            registrations
+            registrations: publicRegistrations
         });
 
     } catch (error) {
-
         console.error(
-            '❌ IP CATALOGUE ERROR:',
+            '❌ IP CATALOGUE LOAD ERROR:',
             error
         );
 
@@ -7737,10 +7744,7 @@ app.get('/api/ip/registrations/:id/access', async (req, res) => {
         const registrationId = req.params.id;
 
         // Use the authenticated user's existing M-Pesa number
-        const phone =
-            req.user?.phone ||
-            req.user?.phoneNumber ||
-            req.user?.mpesaPhone;
+        const phone = req.user?.userPhone;
 
         if (!registrationId) {
             return res.status(400).json({
@@ -7828,13 +7832,7 @@ app.post("/api/ip/access/pay", async (req, res) => {
 
         const { ipRegistrationID } = req.body;
 
-        const phone =
-            req.user?.phone ||
-            req.user?.phoneNumber ||
-            req.user?.mpesaPhone ||
-            req.user?.mobile ||
-            req.user?.phone_number ||
-            req.body?.phone;
+        const phone = req.user?.userPhone;
 
         if (!phone) {
             return res.status(401).json({
@@ -7884,10 +7882,7 @@ app.get('/api/ip/registrations/:id/ipcid/download', async (req, res) => {
         const registrationId = req.params.id;
 
         // Same authenticated M-Pesa number
-        const phone =
-            req.user?.phone ||
-            req.user?.phoneNumber ||
-            req.user?.mpesaPhone;
+        const phone = req.user?.userPhone;
 
         if (!registrationId) {
             return res.status(400).json({
