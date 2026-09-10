@@ -6484,9 +6484,9 @@ const ipUpload = multer({
         contentType: multerS3.AUTO_CONTENT_TYPE,
 
         key: function (req, file, cb) {
-
-            const safeName = (file.originalname || "file")
-                .replace(/[^a-zA-Z0-9._-]/g, "_");
+    const fileName = `${Date.now()}-${path.basename(file.originalname)}`;
+    cb(null, fileName);
+},
 
             const uniqueUploadId =
                 Date.now() +
