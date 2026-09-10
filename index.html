@@ -2047,6 +2047,41 @@ function isEastAfrica(country) {
   return ea.includes(country);
 }
 
+
+// ============================================================
+// GEOSMART CURRENCY INITIALIZATION
+// ============================================================
+
+async function initializeGeoSmart() {
+  const country = await getUserCountry();
+
+  // Use your existing currencies object
+  const currency =
+    currencies[country] ||
+    currencies['KE'];
+
+  if (!currency) {
+    console.error('❌ GeoSmart currency not found:', country);
+    return null;
+  }
+
+  // Make GeoSmart data globally available
+  window.userCountry = country;
+
+  window.userCurrency = {
+    code: currency.code,
+    rate: Number(currency.rate) || 1
+  };
+
+  console.log('🌍 GeoSmart:', {
+    country: window.userCountry,
+    currency: window.userCurrency.code,
+    rate: window.userCurrency.rate
+  });
+
+  return window.userCurrency;
+}
+
 async function unlockIP(postId, type = 'unlock') {
   const btn = document.getElementById(`unlock-btn-${postId}`);
   const originalText = btn ? btn.innerText : "Unlock";
@@ -4448,6 +4483,32 @@ async function renderEcomProducts(products) {
   const container = document.getElementById("ecomContainer");
   if (!container) return;
 
+  // Initialize GeoSmart using your existing country function
+  try {
+    const country = await getUserCountry();
+
+    const currency =
+      currencies[country] ||
+      currencies["KE"];
+
+    if (currency) {
+      window.userCountry = country;
+
+      window.userCurrency = {
+        code: currency.code,
+        rate: Number(currency.rate) || 1
+      };
+
+      console.log("🌍 GeoSmart initialized:", {
+        country: window.userCountry,
+        currency: window.userCurrency.code,
+        rate: window.userCurrency.rate
+      });
+    }
+  } catch (e) {
+    console.error("❌ GeoSmart initialization failed:", e);
+  }
+
   // Validate GeoSmart currency context
   if (!window.userCurrency || !window.userCurrency.code) {
     console.error("❌ GeoSmart currency is not loaded:", window.userCurrency);
@@ -4487,20 +4548,20 @@ async function renderEcomProducts(products) {
       const basePrice = Number(p.price) || 0;
       const geoAmount = basePrice * rate;
 
-      // Use system formatter for price display
       const formattedPrice =
         typeof formatPrice === "function"
-          ? formatPrice(basePrice)
+          ? formatPrice(geoAmount, currencyCode)
           : `${currencyCode} ${geoAmount.toFixed(2)}`;
 
-      // Resolve primary image source
       const imageSrc =
         p.images && p.images.length > 0
           ? `/uploads/${p.images[0]}`
           : p.image || "/uploads/default-product.jpg";
 
       const extraImagesCount =
-        p.images && p.images.length > 1 ? p.images.length - 1 : 0;
+        p.images && p.images.length > 1
+          ? p.images.length - 1
+          : 0;
 
       return `
         <div class="glass product-card overflow-hidden flex flex-col h-full">
