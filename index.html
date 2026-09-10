@@ -306,22 +306,772 @@
 <!-- TAB NAVIGATION -->
 <!-- Enhanced Tab Navigation -->
 <div class="flex border-b border-white/10 mb-10 relative">
-  <button onclick="switchTab(0)" id="tab-ip" 
-    class="tab-active flex-1 py-5 text-center font-bold uppercase tracking-[0.5px] text-sm transition-all duration-300 flex items-center justify-center gap-2 hover:text-yellow-400">
+
+  <button
+    onclick="switchTab(0)"
+    id="tab-ip"
+    class="tab-active flex-1 py-5 text-center font-bold uppercase tracking-[0.5px] text-sm transition-all duration-300 flex items-center justify-center gap-2 hover:text-yellow-400"
+  >
     <span class="text-lg">🌐</span>
     IP Marketplace
   </button>
-  
-  <button onclick="switchTab(1)" id="tab-ecom" 
-    class="flex-1 py-5 text-center font-bold uppercase tracking-[0.5px] text-sm transition-all duration-300 flex items-center justify-center gap-2 hover:text-emerald-400">
+
+  <button
+    onclick="switchTab(1)"
+    id="tab-ecom"
+    class="flex-1 py-5 text-center font-bold uppercase tracking-[0.5px] text-sm transition-all duration-300 flex items-center justify-center gap-2 hover:text-emerald-400"
+  >
     <span class="text-lg">🛍️</span>
     E-Commerce Store
   </button>
 
+  <button
+    onclick="switchTab(2)"
+    id="tab-catalogue"
+    class="flex-1 py-5 text-center font-bold uppercase tracking-[0.5px] text-sm transition-all duration-300 flex items-center justify-center gap-2 hover:text-purple-400"
+  >
+    <span class="text-lg">📚</span>
+    IP Catalogue
+  </button>
+
   <!-- Sliding Indicator -->
-  <div id="tab-indicator" 
-    class="absolute bottom-0 h-0.5 bg-gradient-to-r from-yellow-400 to-emerald-400 transition-all duration-500 rounded-full"></div>
+  <div
+    id="tab-indicator"
+    class="absolute bottom-0 h-0.5 bg-gradient-to-r from-yellow-400 via-purple-400 to-emerald-400 transition-all duration-500 rounded-full"
+  ></div>
+
 </div>
+
+
+<!-- ========================================================= -->
+<!-- IP CATALOGUE -->
+<!-- ========================================================= -->
+
+<div id="catalogue-content" class="hidden">
+
+  <!-- Catalogue Header -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+
+    <div>
+
+      <div class="text-[9px] text-purple-400 font-black uppercase tracking-[0.3em] mb-1">
+        iNFLUENSA IP REGISTRY
+      </div>
+
+      <h2 class="text-2xl font-black text-white uppercase tracking-tight">
+        My IP Catalogue
+      </h2>
+
+      <p class="text-xs text-slate-400 mt-1">
+        View, manage and download your registered intellectual property.
+      </p>
+
+    </div>
+
+    <button
+      onclick="loadIPCatalogue()"
+      class="px-4 py-2 rounded-lg border border-purple-500/30 bg-purple-500/10 text-purple-300 text-xs font-bold uppercase hover:bg-purple-500/20 transition"
+    >
+      ↻ Refresh
+    </button>
+
+  </div>
+
+
+  <!-- Loading -->
+  <div
+    id="catalogue-loading"
+    class="hidden text-center py-12 text-slate-400 text-sm"
+  >
+    Loading your registered IP...
+  </div>
+
+
+  <!-- Empty State -->
+  <div
+    id="catalogue-empty"
+    class="hidden text-center py-14 border border-white/10 rounded-2xl bg-white/[0.02]"
+  >
+
+    <div class="text-4xl mb-3">
+      📚
+    </div>
+
+    <h3 class="text-white font-bold text-lg">
+      No Registered IP Yet
+    </h3>
+
+    <p class="text-slate-500 text-xs mt-2">
+      Your registered intellectual property will appear here.
+    </p>
+
+  </div>
+
+
+  <!-- Catalogue Grid -->
+  <div
+    id="ip-catalogue-grid"
+    class="grid grid-cols-1 md:grid-cols-2 gap-4"
+  ></div>
+
+</div>
+
+
+<script>
+
+/* =========================================================
+   IP CATALOGUE
+   ========================================================= */
+
+async function loadIPCatalogue() {
+
+  const grid = document.getElementById('ip-catalogue-grid');
+  const loading = document.getElementById('catalogue-loading');
+  const empty = document.getElementById('catalogue-empty');
+
+  if (!grid || !loading || !empty) return;
+
+  grid.innerHTML = '';
+
+  empty.classList.add('hidden');
+  loading.classList.remove('hidden');
+
+  try {
+
+    const response = await fetch(`${API_URL}/ip/registrations`, {
+      method: 'GET',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to load IP catalogue: ${response.status}`
+      );
+    }
+
+    const data = await response.json();
+
+    const registrations =
+      Array.isArray(data)
+        ? data
+        : Array.isArray(data.registrations)
+          ? data.registrations
+          : Array.isArray(data.data)
+            ? data.data
+            : [];
+
+    loading.classList.add('hidden');
+
+    if (!registrations.length) {
+
+      empty.classList.remove('hidden');
+
+      return;
+    }
+
+
+    registrations.forEach(ip => {
+
+      const card = document.createElement('div');
+
+      card.className =
+        'p-5 rounded-2xl border border-purple-500/20 bg-white/[0.03] hover:bg-white/[0.05] transition';
+
+
+      const title =
+        ip.title ||
+        ip.name ||
+        ip.ipTitle ||
+        'Untitled IP';
+
+
+      const ipCid =
+        ip.ipCid ||
+        ip.ipCID ||
+        ip.cid ||
+        'Pending';
+
+
+      const status =
+        ip.status ||
+        'REGISTERED';
+
+
+      const registeredDate =
+        ip.createdAt ||
+        ip.registeredAt ||
+        ip.date ||
+        null;
+
+
+      const formattedDate = registeredDate
+        ? new Date(registeredDate).toLocaleDateString()
+        : '—';
+
+
+      const files =
+        Array.isArray(ip.files)
+          ? ip.files
+          : [];
+
+
+      const fileCount =
+        ip.fileCount ||
+        files.length ||
+        0;
+
+
+      card.innerHTML = `
+
+        <!-- CARD HEADER -->
+
+        <div class="flex items-start justify-between gap-3 mb-4">
+
+          <div class="min-w-0">
+
+            <div class="text-[8px] text-purple-400 font-black uppercase tracking-[0.25em] mb-1">
+              REGISTERED IP
+            </div>
+
+            <h3 class="text-white font-bold text-lg truncate">
+              ${escapeHTML(title)}
+            </h3>
+
+          </div>
+
+
+          <span
+            class="shrink-0 px-2 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[8px] font-black uppercase"
+          >
+            ${escapeHTML(status)}
+          </span>
+
+        </div>
+
+
+        <!-- IP INFORMATION -->
+
+        <div class="space-y-2 mb-5">
+
+          <div class="flex justify-between gap-4">
+
+            <span class="text-[10px] text-slate-500 uppercase">
+              IP-CID
+            </span>
+
+            <span class="text-[10px] text-purple-300 font-mono text-right break-all">
+              ${escapeHTML(ipCid)}
+            </span>
+
+          </div>
+
+
+          <div class="flex justify-between">
+
+            <span class="text-[10px] text-slate-500 uppercase">
+              Registered
+            </span>
+
+            <span class="text-[10px] text-slate-300">
+              ${formattedDate}
+            </span>
+
+          </div>
+
+
+          <div class="flex justify-between">
+
+            <span class="text-[10px] text-slate-500 uppercase">
+              Files
+            </span>
+
+            <span class="text-[10px] text-slate-300">
+              ${fileCount}
+            </span>
+
+          </div>
+
+        </div>
+
+
+        <!-- ACTIONS -->
+
+        <div class="grid grid-cols-3 gap-2">
+
+          <button
+            onclick='viewRegisteredIP(${JSON.stringify(ip)})'
+            class="px-2 py-2 rounded-lg border border-purple-500/30 bg-purple-500/10 text-purple-300 text-[9px] font-bold uppercase hover:bg-purple-500/20 transition"
+          >
+            View
+          </button>
+
+
+          <button
+            onclick='downloadIPCID(${JSON.stringify(ip)})'
+            class="px-2 py-2 rounded-lg border border-yellow-500/30 bg-yellow-500/10 text-yellow-300 text-[9px] font-bold uppercase hover:bg-yellow-500/20 transition"
+          >
+            ↓ IP-CID
+          </button>
+
+
+          <button
+            onclick='downloadRegisteredIP(${JSON.stringify(ip)})'
+            class="px-2 py-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 text-[9px] font-bold uppercase hover:bg-emerald-500/20 transition"
+          >
+            ↓ Files
+          </button>
+
+        </div>
+
+      `;
+
+
+      grid.appendChild(card);
+
+    });
+
+
+  } catch (error) {
+
+    console.error('❌ IP Catalogue error:', error);
+
+    loading.classList.add('hidden');
+
+    grid.innerHTML = `
+
+      <div class="col-span-full text-center py-12 border border-red-500/20 rounded-2xl bg-red-500/5">
+
+        <div class="text-3xl mb-3">
+          ⚠️
+        </div>
+
+        <p class="text-red-400 text-sm font-bold">
+          Unable to load IP Catalogue
+        </p>
+
+        <p class="text-slate-500 text-xs mt-2">
+          Please try again.
+        </p>
+
+      </div>
+
+    `;
+
+  }
+
+}
+
+
+/* =========================================================
+   DOWNLOAD IP-CID
+   ========================================================= */
+
+async function downloadIPCID(ip) {
+
+  try {
+
+    const registrationId =
+      ip._id ||
+      ip.id ||
+      ip.registrationId;
+
+
+    if (!registrationId) {
+
+      alert(
+        'IP-CID download is not available for this registration yet.'
+      );
+
+      return;
+    }
+
+
+    const response = await fetch(
+      `${API_URL}/ip/registrations/${encodeURIComponent(registrationId)}/ipcid/download`,
+      {
+        method: 'GET',
+        credentials: 'include'
+      }
+    );
+
+
+    if (!response.ok) {
+
+      throw new Error(
+        `IP-CID download failed: ${response.status}`
+      );
+
+    }
+
+
+    const data = await response.json();
+
+
+    if (data.downloadUrl) {
+
+      window.open(
+        data.downloadUrl,
+        '_blank'
+      );
+
+      return;
+    }
+
+
+    if (data.url) {
+
+      window.open(
+        data.url,
+        '_blank'
+      );
+
+      return;
+    }
+
+
+    alert(
+      'IP-CID download link was not returned by the server.'
+    );
+
+
+  } catch (error) {
+
+    console.error(
+      '❌ IP-CID download error:',
+      error
+    );
+
+    alert(
+      'Unable to download the IP-CID.'
+    );
+
+  }
+
+}
+
+
+/* =========================================================
+   VIEW REGISTERED IP
+   ========================================================= */
+
+function viewRegisteredIP(ip) {
+
+  const files =
+    Array.isArray(ip.files)
+      ? ip.files
+      : [];
+
+
+  const fileList = files.length
+
+    ? files.map((file, index) => {
+
+        const name =
+          file.originalname ||
+          file.filename ||
+          file.key ||
+          `Registered File ${index + 1}`;
+
+
+        return `
+
+          <div class="flex items-center justify-between gap-3 p-3 rounded-lg bg-white/5 border border-white/10">
+
+            <span class="text-xs text-slate-300 truncate">
+              ${escapeHTML(name)}
+            </span>
+
+            ${
+              file.downloadUrl || file.url
+                ? `
+
+                  <button
+                    onclick="window.open('${escapeAttribute(file.downloadUrl || file.url)}', '_blank')"
+                    class="shrink-0 text-[9px] text-yellow-400 font-bold uppercase"
+                  >
+                    Download
+                  </button>
+
+                `
+                : ''
+            }
+
+          </div>
+
+        `;
+
+      }).join('')
+
+    : `
+
+      <div class="text-xs text-slate-500">
+        No files attached.
+      </div>
+
+    `;
+
+
+  const modal =
+    document.createElement('div');
+
+
+  modal.className =
+    'fixed inset-0 z-[70] bg-black/90 backdrop-blur-xl flex items-center justify-center p-4';
+
+
+  modal.innerHTML = `
+
+    <div class="glass w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 border-purple-500/20 rounded-2xl">
+
+
+      <div class="flex items-start justify-between gap-4 mb-6">
+
+        <div>
+
+          <div class="text-[8px] text-purple-400 font-black uppercase tracking-[0.25em] mb-1">
+            iNFLUENSA IP REGISTRY
+          </div>
+
+          <h3 class="text-xl font-black text-white">
+            ${escapeHTML(ip.title || ip.name || 'Registered IP')}
+          </h3>
+
+        </div>
+
+
+        <button
+          onclick="this.closest('.fixed').remove()"
+          class="text-slate-500 hover:text-white text-xl"
+        >
+          ✕
+        </button>
+
+      </div>
+
+
+      <!-- IP-CID -->
+
+      <div class="p-4 rounded-xl bg-purple-500/5 border border-purple-500/20 mb-5">
+
+        <div class="text-[8px] text-slate-500 uppercase mb-1">
+          IP-CID
+        </div>
+
+        <div class="text-sm text-purple-300 font-mono break-all">
+          ${escapeHTML(ip.ipCid || ip.ipCID || ip.cid || 'Pending')}
+        </div>
+
+      </div>
+
+
+      <!-- REGISTERED FILES -->
+
+      <div class="mb-5">
+
+        <div class="text-[9px] text-slate-500 font-bold uppercase mb-2">
+          Registered Files
+        </div>
+
+        <div class="space-y-2">
+          ${fileList}
+        </div>
+
+      </div>
+
+
+      <!-- DOWNLOAD BUTTONS -->
+
+      <div class="grid grid-cols-2 gap-2">
+
+        <button
+          onclick='downloadIPCID(${JSON.stringify(ip)})'
+          class="py-3 rounded-xl bg-yellow-400 text-black font-black text-[10px] uppercase tracking-wider"
+        >
+          ↓ Download IP-CID
+        </button>
+
+
+        <button
+          onclick='downloadRegisteredIP(${JSON.stringify(ip)})'
+          class="py-3 rounded-xl bg-emerald-400 text-black font-black text-[10px] uppercase tracking-wider"
+        >
+          ↓ Download Files
+        </button>
+
+      </div>
+
+    </div>
+
+  `;
+
+
+  document.body.appendChild(modal);
+
+}
+
+
+/* =========================================================
+   DOWNLOAD REGISTERED IP FILES
+   ========================================================= */
+
+async function downloadRegisteredIP(ip) {
+
+  try {
+
+    if (ip.downloadUrl) {
+
+      window.open(
+        ip.downloadUrl,
+        '_blank'
+      );
+
+      return;
+    }
+
+
+    if (ip.url) {
+
+      window.open(
+        ip.url,
+        '_blank'
+      );
+
+      return;
+    }
+
+
+    const registrationId =
+      ip._id ||
+      ip.id ||
+      ip.registrationId;
+
+
+    if (!registrationId) {
+
+      alert(
+        'Download is not available for this registration yet.'
+      );
+
+      return;
+    }
+
+
+    const response = await fetch(
+      `${API_URL}/ip/registrations/${encodeURIComponent(registrationId)}/download`,
+      {
+        method: 'GET',
+        credentials: 'include'
+      }
+    );
+
+
+    if (!response.ok) {
+
+      throw new Error(
+        `Download failed: ${response.status}`
+      );
+
+    }
+
+
+    const data =
+      await response.json();
+
+
+    if (data.downloadUrl) {
+
+      window.open(
+        data.downloadUrl,
+        '_blank'
+      );
+
+      return;
+    }
+
+
+    if (data.url) {
+
+      window.open(
+        data.url,
+        '_blank'
+      );
+
+      return;
+    }
+
+
+    alert(
+      'Download link was not returned by the server.'
+    );
+
+
+  } catch (error) {
+
+    console.error(
+      '❌ IP download error:',
+      error
+    );
+
+    alert(
+      'Unable to download this registered IP.'
+    );
+
+  }
+
+}
+
+
+/* =========================================================
+   SECURITY HELPERS
+   ========================================================= */
+
+function escapeHTML(value) {
+
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+
+}
+
+
+function escapeAttribute(value) {
+
+  return String(value ?? '')
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/"/g, '&quot;');
+
+}
+
+
+/* =========================================================
+   LOAD CATALOGUE WHEN TAB 2 OPENS
+   ========================================================= */
+
+const originalSwitchTab =
+  window.switchTab;
+
+
+window.switchTab = function(index) {
+
+  originalSwitchTab(index);
+
+
+  if (index === 2) {
+
+    loadIPCatalogue();
+
+  }
+
+};
+
+</script>
 <!-- ECOMMERCE SECTION (hidden by default) -->
 <section id="ecomSection" class="hidden lg:col-span-12">
   <div class="flex justify-between items-center mb-6">
@@ -4655,7 +5405,60 @@ async function renderEcomProducts(products) {
   console.log("✅ PRODUCTS RENDERED & EVENT LISTENERS ATTACHED");
 }
 
-  
+async function downloadIPCID(ip) {
+
+  try {
+
+    const registrationId =
+      ip._id ||
+      ip.id ||
+      ip.registrationId;
+
+    if (!registrationId) {
+      alert('IP-CID download is not available for this registration.');
+      return;
+    }
+
+    /*
+     * Backend should generate the IP-CID certificate/document
+     * and return a secure download URL.
+     */
+
+    const response = await fetch(
+      `${API_URL}/ip/registrations/${encodeURIComponent(registrationId)}/ipcid/download`,
+      {
+        method: 'GET',
+        credentials: 'include'
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`IP-CID download failed: ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    if (data.downloadUrl) {
+      window.open(data.downloadUrl, '_blank');
+      return;
+    }
+
+    if (data.url) {
+      window.open(data.url, '_blank');
+      return;
+    }
+
+    alert('IP-CID download link was not returned by the server.');
+
+  } catch (error) {
+
+    console.error('❌ IP-CID download error:', error);
+
+    alert('Unable to download the IP-CID.');
+
+  }
+
+}
 function updateProductImagesName() {
     const files = document.getElementById("productImages").files;
     const label = document.getElementById("productImagesLabel");
