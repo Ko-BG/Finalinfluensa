@@ -13,7 +13,7 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const router = express.Router();
 const dns = require('dns');
 dns.setDefaultResultOrder('ipv4first');
-const IPRegistration = require('./models/IPRegistration'); // Adjust relative path if needed
+
 
  
 
