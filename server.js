@@ -6479,25 +6479,13 @@ app.post('/api/posts', upload.any(), async (req, res) => {
 const ipUpload = multer({
     storage: multerS3({
         s3: s3,
-        bucket: process.env.AWS_S3_BUCKET,
+        bucket: process.env.AWS_S3_BUCKET_NAME,
 
         contentType: multerS3.AUTO_CONTENT_TYPE,
 
         key: function (req, file, cb) {
-    const fileName = `${Date.now()}-${path.basename(file.originalname)}`;
-    cb(null, fileName);
-},
-
-            const uniqueUploadId =
-                Date.now() +
-                "-" +
-                crypto.randomBytes(16).toString("hex");
-
-            // Separate S3 location for IP registrations
-            const s3Key =
-                `ip-registrations/${uniqueUploadId}-${safeName}`;
-
-            cb(null, s3Key);
+            const fileName = `${Date.now()}-${path.basename(file.originalname)}`;
+            cb(null, fileName);
         }
     }),
 
@@ -6506,7 +6494,6 @@ const ipUpload = multer({
         fileSize: 500 * 1024 * 1024
     }
 });
-
 
 // ============================================================
 // POST /api/ip/register
