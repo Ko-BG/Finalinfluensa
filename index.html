@@ -4760,38 +4760,29 @@ async function viewRegisteredIP(ip) {
             return;
         }
 
-        // Phone number is already associated with the logged-in
-        // iNFLUENSA user. Use the existing authenticated user data.
-        const phone =
-            window.userPhone ||
-            window.currentUser?.phone ||
-            window.user?.phone ||
-            localStorage.getItem('userPhone');
-
-        if (!phone) {
-            alert('Your M-Pesa phone number could not be found. Please log in again.');
-            return;
-        }
-
-        // --------------------------------------------------------
+        // ========================================================
         // CHECK ACCESS
-        // --------------------------------------------------------
+        // Backend identifies the logged-in user and retrieves
+        // the registered M-Pesa number from User.identity.
+        // No phone number is required from the frontend.
+        // ========================================================
 
         const accessResponse = await fetch(
-            `${API_URL}/ip/registrations/${encodeURIComponent(registrationId)}/access?phone=${encodeURIComponent(phone)}`,
+            `${API_URL}/ip/registrations/${encodeURIComponent(registrationId)}/access`,
             {
                 method: 'GET',
                 credentials: 'include'
             }
         );
 
-        // --------------------------------------------------------
-        // ALREADY PAID — SHOW RECORD
-        // --------------------------------------------------------
+        // ========================================================
+        // ALREADY PAID — SHOW PROTECTED RECORD
+        // ========================================================
 
         if (accessResponse.ok) {
 
-            const data = await accessResponse.json();
+            const data =
+                await accessResponse.json();
 
             if (
                 !data.success ||
@@ -4802,7 +4793,8 @@ async function viewRegisteredIP(ip) {
                 return;
             }
 
-            const registration = data.registration;
+            const registration =
+                data.registration;
 
             const existingModal =
                 document.getElementById('ipViewModal');
@@ -4811,7 +4803,8 @@ async function viewRegisteredIP(ip) {
                 existingModal.remove();
             }
 
-            const modal = document.createElement('div');
+            const modal =
+                document.createElement('div');
 
             modal.id = 'ipViewModal';
 
@@ -4891,9 +4884,12 @@ async function viewRegisteredIP(ip) {
                                 font-size: 18px;
                                 font-weight: 700;
                                 letter-spacing: 1px;
+                                word-break: break-all;
                             "
                         >
-                            ${escapeHTML(registration.ipCid || 'N/A')}
+                            ${escapeHTML(
+                                registration.ipCid || 'N/A'
+                            )}
                         </div>
 
                         <div
@@ -4917,22 +4913,30 @@ async function viewRegisteredIP(ip) {
 
                         <div>
                             <strong>CID:</strong>
-                            ${escapeHTML(registration.cid || 'N/A')}
+                            ${escapeHTML(
+                                registration.cid || 'N/A'
+                            )}
                         </div>
 
                         <div>
                             <strong>IP Type:</strong>
-                            ${escapeHTML(registration.ipType || 'N/A')}
+                            ${escapeHTML(
+                                registration.ipType || 'N/A'
+                            )}
                         </div>
 
                         <div>
                             <strong>Title:</strong>
-                            ${escapeHTML(registration.title || 'N/A')}
+                            ${escapeHTML(
+                                registration.title || 'N/A'
+                            )}
                         </div>
 
                         <div>
                             <strong>Owner:</strong>
-                            ${escapeHTML(registration.ownerName || 'N/A')}
+                            ${escapeHTML(
+                                registration.ownerName || 'N/A'
+                            )}
                         </div>
 
                         <div>
@@ -4944,19 +4948,25 @@ async function viewRegisteredIP(ip) {
                                     white-space: pre-wrap;
                                 "
                             >
-                                ${escapeHTML(registration.description || 'N/A')}
+                                ${escapeHTML(
+                                    registration.description || 'N/A'
+                                )}
                             </div>
 
                         </div>
 
                         <div>
                             <strong>Registrant:</strong>
-                            ${escapeHTML(registration.registrant || 'N/A')}
+                            ${escapeHTML(
+                                registration.registrant || 'N/A'
+                            )}
                         </div>
 
                         <div>
                             <strong>Status:</strong>
-                            ${escapeHTML(registration.status || 'N/A')}
+                            ${escapeHTML(
+                                registration.status || 'N/A'
+                            )}
                         </div>
 
                         <div>
@@ -4979,7 +4989,9 @@ async function viewRegisteredIP(ip) {
 
                         <div>
                             <strong>Files:</strong>
-                            ${escapeHTML(registration.fileCount || 0)}
+                            ${escapeHTML(
+                                String(registration.fileCount || 0)
+                            )}
                         </div>
 
                         <div>
@@ -5001,14 +5013,16 @@ async function viewRegisteredIP(ip) {
             return;
         }
 
-        // --------------------------------------------------------
-        // PAYMENT REQUIRED — AUTOMATIC STK PUSH
-        // --------------------------------------------------------
+        // ========================================================
+        // PAYMENT REQUIRED
+        // ========================================================
 
         if (accessResponse.status === 402) {
 
             const paymentData =
-                await accessResponse.json().catch(() => ({}));
+                await accessResponse
+                    .json()
+                    .catch(() => ({}));
 
             const amount =
                 paymentData.amount || 10;
@@ -5016,55 +5030,60 @@ async function viewRegisteredIP(ip) {
             const currency =
                 paymentData.currency || 'KES';
 
-            const confirmPayment = confirm(
-                `Unlock this IP registration for ${currency} ${amount}?\n\n` +
-                `An M-Pesa STK Push will be sent to your registered phone number.\n\n` +
-                `Tap OK, then enter your M-Pesa PIN on your phone.`
-            );
+            const confirmPayment =
+                confirm(
+                    `Unlock this IP registration for ${currency} ${amount}?\n\n` +
+                    `An M-Pesa STK Push will be sent to your registered phone number.\n\n` +
+                    `Tap OK, then enter your M-Pesa PIN on your phone.`
+                );
 
             if (!confirmPayment) {
                 return;
             }
 
-            // ----------------------------------------------------
+            // ====================================================
             // AUTOMATIC STK PUSH
-            // ----------------------------------------------------
+            //
+            // IMPORTANT:
+            // Do NOT send phone from frontend.
+            // Backend gets User.identity automatically.
+            // ====================================================
 
-            const paymentResponse = await fetch(
-                `${API_URL}/ip/access/pay`,
-                {
-                    method: 'POST',
+            const paymentResponse =
+                await fetch(
+                    `${API_URL}/ip/access/pay`,
+                    {
+                        method: 'POST',
 
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
 
-                    credentials: 'include',
+                        credentials: 'include',
 
-                    body: JSON.stringify({
-                        phone: phone,
-                        ipRegistrationID: registrationId
-                    })
-                }
-            );
+                        body: JSON.stringify({
+                            ipRegistrationID:
+                                registrationId
+                        })
+                    }
+                );
 
             const paymentResult =
-                await paymentResponse.json().catch(() => ({}));
+                await paymentResponse
+                    .json()
+                    .catch(() => ({}));
 
             if (
                 !paymentResponse.ok ||
                 !paymentResult.success
             ) {
+
                 throw new Error(
                     paymentResult.error ||
                     paymentResult.message ||
                     'Unable to initiate IP access payment.'
                 );
             }
-
-            // ----------------------------------------------------
-            // WAIT FOR USER TO ENTER M-PESA PIN
-            // ----------------------------------------------------
 
             alert(
                 `STK Push sent to your registered M-Pesa number.\n\n` +
@@ -5074,12 +5093,14 @@ async function viewRegisteredIP(ip) {
             return;
         }
 
-        // --------------------------------------------------------
+        // ========================================================
         // OTHER ERROR
-        // --------------------------------------------------------
+        // ========================================================
 
         const errorData =
-            await accessResponse.json().catch(() => ({}));
+            await accessResponse
+                .json()
+                .catch(() => ({}));
 
         throw new Error(
             errorData.error ||
@@ -5114,37 +5135,30 @@ async function downloadIPCID(ip) {
             return;
         }
 
-        // Use the M-Pesa number already associated with the logged-in user
-        const phone =
-            window.userPhone ||
-            window.currentUser?.phone ||
-            window.user?.phone ||
-            localStorage.getItem('userPhone');
-
-        if (!phone) {
-            alert('Your M-Pesa phone number could not be found. Please log in again.');
-            return;
-        }
-
-        // --------------------------------------------------------
+        // ========================================================
         // CHECK WHETHER ACCESS HAS ALREADY BEEN PAID
-        // --------------------------------------------------------
+        //
+        // The backend identifies the logged-in user from the
+        // authenticated session and retrieves User.identity.
+        // No phone number is required from the frontend.
+        // ========================================================
 
         const accessResponse = await fetch(
-            `${API_URL}/ip/registrations/${encodeURIComponent(registrationId)}/access?phone=${encodeURIComponent(phone)}`,
+            `${API_URL}/ip/registrations/${encodeURIComponent(registrationId)}/access`,
             {
                 method: 'GET',
                 credentials: 'include'
             }
         );
 
-        // --------------------------------------------------------
-        // ALREADY PAID — DOWNLOAD CID
-        // --------------------------------------------------------
+        // ========================================================
+        // ALREADY PAID — DOWNLOAD FULL IP-CID
+        // ========================================================
 
         if (accessResponse.ok) {
 
-            const accessData = await accessResponse.json();
+            const accessData =
+                await accessResponse.json();
 
             if (
                 accessData.success &&
@@ -5152,7 +5166,7 @@ async function downloadIPCID(ip) {
             ) {
 
                 const downloadResponse = await fetch(
-                    `${API_URL}/ip/registrations/${encodeURIComponent(registrationId)}/ipcid/download?phone=${encodeURIComponent(phone)}`,
+                    `${API_URL}/ip/registrations/${encodeURIComponent(registrationId)}/ipcid/download`,
                     {
                         method: 'GET',
                         credentials: 'include'
@@ -5160,12 +5174,26 @@ async function downloadIPCID(ip) {
                 );
 
                 if (!downloadResponse.ok) {
+
+                    const errorData =
+                        await downloadResponse
+                            .json()
+                            .catch(() => ({}));
+
                     throw new Error(
+                        errorData.error ||
+                        errorData.message ||
                         `IP-CID download failed: ${downloadResponse.status}`
                     );
                 }
 
-                const blob = await downloadResponse.blob();
+                // =================================================
+                // DOWNLOAD THE FULL IP-CID
+                // Backend only releases it after payment.
+                // =================================================
+
+                const blob =
+                    await downloadResponse.blob();
 
                 const downloadUrl =
                     window.URL.createObjectURL(blob);
@@ -5173,7 +5201,8 @@ async function downloadIPCID(ip) {
                 const link =
                     document.createElement('a');
 
-                link.href = downloadUrl;
+                link.href =
+                    downloadUrl;
 
                 link.download =
                     `IP-CID-${registrationId}.txt`;
@@ -5184,20 +5213,25 @@ async function downloadIPCID(ip) {
 
                 link.remove();
 
-                window.URL.revokeObjectURL(downloadUrl);
+                // Give the browser time to start the download
+                setTimeout(() => {
+                    window.URL.revokeObjectURL(downloadUrl);
+                }, 1000);
 
                 return;
             }
         }
 
-        // --------------------------------------------------------
+        // ========================================================
         // PAYMENT REQUIRED — AUTOMATIC STK PUSH
-        // --------------------------------------------------------
+        // ========================================================
 
         if (accessResponse.status === 402) {
 
             const paymentData =
-                await accessResponse.json().catch(() => ({}));
+                await accessResponse
+                    .json()
+                    .catch(() => ({}));
 
             const amount =
                 paymentData.amount || 10;
@@ -5205,51 +5239,72 @@ async function downloadIPCID(ip) {
             const currency =
                 paymentData.currency || 'KES';
 
-            const confirmPayment = confirm(
-                `Download this IP-CID for ${currency} ${amount}?\n\n` +
-                `An M-Pesa STK Push will be sent to your registered phone number.\n\n` +
-                `Tap OK, then enter your M-Pesa PIN on your phone.`
-            );
+            const confirmPayment =
+                confirm(
+                    `Download this IP-CID for ${currency} ${amount}?\n\n` +
+                    `An M-Pesa STK Push will be sent to your registered phone number.\n\n` +
+                    `Tap OK, then enter your M-Pesa PIN on your phone.`
+                );
 
             if (!confirmPayment) {
                 return;
             }
 
-            // ----------------------------------------------------
+            // ====================================================
             // AUTOMATIC STK PUSH
-            // ----------------------------------------------------
+            //
+            // IMPORTANT:
+            // Do NOT send phone from the frontend.
+            //
+            // Backend:
+            // req.user._id
+            //      ↓
+            // User.findById()
+            //      ↓
+            // user.identity
+            //      ↓
+            // registered M-Pesa number
+            // ====================================================
 
-            const paymentResponse = await fetch(
-                `${API_URL}/ip/access/pay`,
-                {
-                    method: 'POST',
+            const paymentResponse =
+                await fetch(
+                    `${API_URL}/ip/access/pay`,
+                    {
+                        method: 'POST',
 
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
 
-                    credentials: 'include',
+                        credentials: 'include',
 
-                    body: JSON.stringify({
-                        phone: phone,
-                        ipRegistrationID: registrationId
-                    })
-                }
-            );
+                        body: JSON.stringify({
+                            ipRegistrationID:
+                                registrationId
+                        })
+                    }
+                );
 
             const paymentResult =
-                await paymentResponse.json().catch(() => ({}));
+                await paymentResponse
+                    .json()
+                    .catch(() => ({}));
 
             if (
                 !paymentResponse.ok ||
                 !paymentResult.success
             ) {
+
                 throw new Error(
                     paymentResult.error ||
                     paymentResult.message ||
                     'Unable to initiate IP-CID payment.'
                 );
             }
+
+            // ====================================================
+            // PAYMENT INITIATED
+            // ====================================================
 
             alert(
                 `STK Push sent to your registered M-Pesa number.\n\n` +
@@ -5261,12 +5316,14 @@ async function downloadIPCID(ip) {
             return;
         }
 
-        // --------------------------------------------------------
-        // OTHER ERROR
-        // --------------------------------------------------------
+        // ========================================================
+        // OTHER ACCESS ERROR
+        // ========================================================
 
         const errorData =
-            await accessResponse.json().catch(() => ({}));
+            await accessResponse
+                .json()
+                .catch(() => ({}));
 
         throw new Error(
             errorData.error ||
