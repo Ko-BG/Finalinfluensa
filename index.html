@@ -588,18 +588,20 @@
   </div>
 </div>
 <!-- FAB / MINT MODAL -->
-<div id="fabModal" class="fixed inset-0 bg-black/95 backdrop-blur-xl hidden z-50 flex items-center justify-center p-4">
-  <div class="glass p-10 w-full max-w-xl border-white/10">
-    <div class="flex justify-between items-center mb-6">
-      <h3 id="fabModalTitle" class="text-2xl font-bold text-yellow-400 uppercase tracking-tighter">Mint Global IP</h3>
-      <button onclick="closeFab()" class="text-slate-500 hover:text-white text-2xl">✕</button>
+<div id="fabModal" class="fixed inset-0 bg-black/95 backdrop-blur-xl hidden z-50 flex items-center justify-center p-3">
+  <div class="glass p-6 w-full max-w-md border-white/10 max-h-[90vh] overflow-y-auto">
+    <div class="flex justify-between items-center mb-4">
+      <h3 id="fabModalTitle" class="text-xl font-bold text-yellow-400 uppercase tracking-tighter">
+        Mint Global IP
+      </h3>
+      <button onclick="closeFab()" class="text-slate-500 hover:text-white text-xl">✕</button>
     </div>
     
     <!-- ============================================================
      FAB CATALOGUE / MODE SWITCH
      ============================================================ -->
 
-<div class="flex gap-2 mb-8 p-1 bg-white/5 rounded-xl">
+<div class="flex gap-1.5 mb-4 p-1 bg-white/5 rounded-xl">
 
   <!-- IP ASSET -->
   <button
@@ -638,7 +640,7 @@
 
 <div id="fab-ip-form">
 
-  <div class="flex gap-2 mb-6 p-1 bg-white/5 rounded-xl">
+  <div class="flex gap-1.5 mb-4 p-1 bg-white/5 rounded-xl">
 
     <button
       onclick="setMintType('file')"
@@ -794,14 +796,14 @@
 
 <div
   id="fab-ip-registration-form"
-  class="hidden space-y-5"
+  class="hidden space-y-3"
 >
 
   <!-- HEADER -->
 
-  <div class="p-5 rounded-2xl border border-purple-500/20 bg-purple-500/5">
+  <div class="p-3 rounded-xl border border-purple-500/20 bg-purple-500/5">
 
-    <div class="text-[9px] text-purple-400 font-black uppercase tracking-[0.35em] mb-2">
+    <div class="text-[8px] text-purple-400 font-black uppercase tracking-[0.25em] mb-1">
       iNFLUENSA IP REGISTRY
     </div>
 
@@ -1112,12 +1114,12 @@
 
 <div
   id="fab-product-form"
-  class="hidden space-y-5"
+  class="hidden space-y-3"
 >
 
   <input
     id="productName"
-    class="input-field w-full p-4 rounded-xl"
+    class="input-field w-full p-3 rounded-lg"
     placeholder="Product Name (e.g. Wireless Earbuds)"
   />
 
