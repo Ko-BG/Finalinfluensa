@@ -416,13 +416,6 @@
 
 </div>
 
-
-
-/* =========================================================
-   IP CATALOGUE
-   ========================================================= */
-
-
 <!-- ECOMMERCE SECTION (hidden by default) -->
 <section id="ecomSection" class="hidden lg:col-span-12">
   <div class="flex justify-between items-center mb-6">
@@ -3056,25 +3049,59 @@ function escapeAttribute(value) {
 
 
 /* =========================================================
-   LOAD CATALOGUE WHEN TAB 2 OPENS
+   TAB SWITCHING — 3 TABS
    ========================================================= */
 
-const originalSwitchTab =
-  window.switchTab;
+function switchTab(index) {
+    const ipSection = document.getElementById('ipSection');
+    const ecomSection = document.getElementById('ecomSection');
+    const catalogueSection = document.getElementById('catalogue-content');
 
+    const tabIP = document.getElementById('tab-ip');
+    const tabEcom = document.getElementById('tab-ecom');
+    const tabCatalogue = document.getElementById('tab-catalogue');
+    const indicator = document.getElementById('tab-indicator');
 
-window.switchTab = function(index) {
+    // Hide all sections
+    if (ipSection) ipSection.classList.add('hidden');
+    if (ecomSection) ecomSection.classList.add('hidden');
+    if (catalogueSection) catalogueSection.classList.add('hidden');
 
-  originalSwitchTab(index);
+    // Remove active state
+    [tabIP, tabEcom, tabCatalogue].forEach(tab => {
+        if (tab) tab.classList.remove('tab-active');
+    });
 
+    // Show selected section
+    if (index === 0) {
+        if (ipSection) ipSection.classList.remove('hidden');
+        if (tabIP) tabIP.classList.add('tab-active');
+    }
 
-  if (index === 2) {
+    if (index === 1) {
+        if (ecomSection) ecomSection.classList.remove('hidden');
+        if (tabEcom) tabEcom.classList.add('tab-active');
+    }
 
-    loadIPCatalogue();
+    if (index === 2) {
+        if (catalogueSection) catalogueSection.classList.remove('hidden');
+        if (tabCatalogue) tabCatalogue.classList.add('tab-active');
 
-  }
+        // Load registered IPs when Catalogue opens
+        loadIPCatalogue();
+    }
 
-};
+    // Move sliding indicator
+    if (indicator) {
+        indicator.style.width = `${100 / 3}%`;
+        indicator.style.left = `${index * (100 / 3)}%`;
+    }
+}
+
+// Open IP Marketplace by default
+document.addEventListener('DOMContentLoaded', () => {
+    switchTab(0);
+});
 
 // Route: /payouts/claim
 async function handleClaimPayouts(countryCode = 'US') {
