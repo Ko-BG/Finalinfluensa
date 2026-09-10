@@ -901,19 +901,33 @@ const transactionSchema = new mongoose.Schema({
         index: true
     },
 
+    // Existing Post transactions
     postID: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "Post",
-        required: true,
-        index: true
+        required: false,
+        index: true,
+        sparse: true
     },
+
+    // NEW: IP Registration access transactions
+    ipRegistrationID: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "IPRegistration",
+    required: false,
+    index: true,
+    sparse: true
+},
 
     userPhone: String,
 
+    // Existing creator transactions
+    // Not required for IP access payments
     creatorId: {
-        type:String,
-        required: true,
-        index: true
+        type: String,
+        required: false,
+        index: true,
+        sparse: true
     },
 
     amountPaid: {
@@ -936,7 +950,10 @@ const transactionSchema = new mongoose.Schema({
         default: "KES"
     },
 
-    type: String,
+    type: {
+        type: String,
+        index: true
+    },
 
     gateway: {
         type: String,
@@ -2785,6 +2802,576 @@ io.on('connection', (socket) => {
         }
     });
 });
+// ============================================================
+// IP REGISTRATION ACCESS PAYMENT
+// KSh 10 PER REGISTERED IP
+// 100% PLATFORM — NO CREATOR SPLIT
+// ============================================================
+
+const IP_ACCESS_PRICE_KES = 10;
+
+
+// ============================================================
+// CHECK WHETHER USER HAS ALREADY PAID FOR THIS IP
+// ============================================================
+
+async function hasPaidForIPAccess(ipRegistrationID, phone) {
+    const cleanedPhone = cleanPhone(phone);
+
+    if (!ipRegistrationID || !cleanedPhone) {
+        return false;
+    }
+
+    const payment = await Transaction.findOne({
+        ipRegistrationID: ipRegistrationID,
+        userPhone: cleanedPhone,
+        type: "ip_access",
+        status: "completed",
+        amountPaid: IP_ACCESS_PRICE_KES
+    }).lean();
+
+    return !!payment;
+}
+
+
+// ============================================================
+// CREATE IP ACCESS TRANSACTION
+// ============================================================
+
+async function createPendingIPAccessTransaction({
+    checkoutID,
+    ipRegistrationID,
+    phone,
+    gateway,
+    currency = "KES"
+}) {
+    const cleanedPhone = cleanPhone(phone);
+
+    return await Transaction.create({
+        checkoutID,
+
+        // IMPORTANT:
+        // This is the registered IP being unlocked.
+        ipRegistrationID,
+
+        // No Post is involved.
+        postID: undefined,
+
+        // No creator receives this payment.
+        creatorId: undefined,
+
+        userPhone: cleanedPhone,
+
+        // Fixed KSh 10 access charge.
+        amountPaid: IP_ACCESS_PRICE_KES,
+
+        // 100% goes to the platform.
+        platformFee: IP_ACCESS_PRICE_KES,
+
+        // No creator split.
+        creatorAmount: 0,
+
+        currency,
+
+        type: "ip_access",
+
+        gateway,
+
+        status: "pending"
+    });
+}
+
+
+// ============================================================
+// IP ACCESS — M-PESA
+// ============================================================
+
+const triggerIPAccessMpesa = async (
+    phone,
+    ipRegistrationID
+) => {
+    try {
+        const cleanedPhone = cleanPhone(phone);
+
+        if (!cleanedPhone) {
+            throw new Error("IDENT_SIGNAL_LOST");
+        }
+
+        if (!ipRegistrationID) {
+            throw new Error("IP_REGISTRATION_ID_REQUIRED");
+        }
+
+        // ------------------------------------------------------
+        // PREVENT PAYING AGAIN IF ALREADY UNLOCKED
+        // ------------------------------------------------------
+
+        const alreadyPaid = await hasPaidForIPAccess(
+            ipRegistrationID,
+            cleanedPhone
+        );
+
+        if (alreadyPaid) {
+            return {
+                success: true,
+                alreadyPaid: true,
+                unlocked: true,
+                ipRegistrationID
+            };
+        }
+
+        // ------------------------------------------------------
+        // MPESA TOKEN
+        // ------------------------------------------------------
+
+        const token = await getMpesaToken();
+
+        const timestamp = new Date()
+            .toISOString()
+            .replace(/[-:T.]/g, "")
+            .slice(0, 14);
+
+        const shortCode =
+            (process.env.MPESA_SHORTCODE || "").trim();
+
+        const passKey =
+            (process.env.MPESA_PASSKEY || "").trim();
+
+        const callbackUrl =
+            (process.env.MPESA_CALLBACK_URL || "").trim();
+
+        if (!shortCode || !passKey || !callbackUrl) {
+            throw new Error("MISSING_MPESA_CONFIG");
+        }
+
+        const password = Buffer
+            .from(
+                `${shortCode}${passKey}${timestamp}`
+            )
+            .toString("base64");
+
+        // ------------------------------------------------------
+        // IP ACCESS PAYMENT
+        // ------------------------------------------------------
+
+        const payload = {
+            BusinessShortCode: shortCode,
+
+            Password: password,
+
+            Timestamp: timestamp,
+
+            TransactionType:
+                "CustomerBuyGoodsOnline",
+
+            Amount:
+                IP_ACCESS_PRICE_KES,
+
+            PartyA:
+                cleanedPhone,
+
+            PartyB:
+                "3422513",
+
+            PhoneNumber:
+                cleanedPhone,
+
+            CallBackURL:
+                callbackUrl,
+
+            AccountReference:
+                `IPACCESS-${ipRegistrationID.toString().slice(-8).toUpperCase()}`,
+
+            TransactionDesc:
+                "iNFLUENSA IP ACCESS"
+        };
+
+        console.log(
+            `🛰️ IP ACCESS MPESA | KES ${IP_ACCESS_PRICE_KES} | REG: ${ipRegistrationID}`
+        );
+
+        const response = await axios.post(
+            `${getMpesaBaseUrl()}/mpesa/stkpush/v1/processrequest`,
+            payload,
+            {
+                headers: {
+                    Authorization:
+                        `Bearer ${token}`
+                },
+                timeout: 15000
+            }
+        );
+
+        console.log(
+            "📥 IP ACCESS MPESA RESPONSE:",
+            JSON.stringify(
+                response.data,
+                null,
+                2
+            )
+        );
+
+        if (!response.data?.CheckoutRequestID) {
+            throw new Error(
+                "GATEWAY_EMPTY_RESPONSE"
+            );
+        }
+
+        // ------------------------------------------------------
+        // SAVE PENDING PAYMENT
+        // ------------------------------------------------------
+
+        await createPendingIPAccessTransaction({
+            checkoutID:
+                response.data.CheckoutRequestID,
+
+            ipRegistrationID,
+
+            phone:
+                cleanedPhone,
+
+            gateway:
+                "mpesa",
+
+            currency:
+                "KES"
+        });
+
+        return {
+            success: true,
+
+            unlocked: false,
+
+            checkoutID:
+                response.data.CheckoutRequestID,
+
+            CheckoutRequestID:
+                response.data.CheckoutRequestID,
+
+            ipRegistrationID,
+
+            amount:
+                IP_ACCESS_PRICE_KES,
+
+            currency:
+                "KES",
+
+            gateway:
+                "mpesa"
+        };
+
+    } catch (error) {
+
+        console.error(
+            "❌ IP ACCESS MPESA ERROR:",
+            error.response?.data ||
+            error.message
+        );
+
+        throw new Error(
+            error.response?.data?.errorMessage ||
+            error.message ||
+            "IP_ACCESS_PAYMENT_FAILED"
+        );
+    }
+};
+
+
+// ============================================================
+// IP ACCESS — STRIPE
+// ============================================================
+
+const triggerIPAccessStripe = async (
+    phone,
+    ipRegistrationID
+) => {
+    try {
+        const cleanedPhone = cleanPhone(phone);
+
+        if (!cleanedPhone) {
+            throw new Error("IDENT_SIGNAL_LOST");
+        }
+
+        if (!ipRegistrationID) {
+            throw new Error("IP_REGISTRATION_ID_REQUIRED");
+        }
+
+        // ------------------------------------------------------
+        // CHECK EXISTING PAYMENT
+        // ------------------------------------------------------
+
+        const alreadyPaid = await hasPaidForIPAccess(
+            ipRegistrationID,
+            cleanedPhone
+        );
+
+        if (alreadyPaid) {
+            return {
+                success: true,
+                alreadyPaid: true,
+                unlocked: true,
+                ipRegistrationID
+            };
+        }
+
+        // ------------------------------------------------------
+        // GEO CURRENCY
+        // ------------------------------------------------------
+
+        const currencyData =
+            await getCurrencyByPhone(cleanedPhone);
+
+        const currency =
+            currencyData.code.toLowerCase();
+
+        let amountInMinor =
+            Math.round(
+                IP_ACCESS_PRICE_KES *
+                currencyData.rate *
+                100
+            );
+
+        amountInMinor =
+            Math.max(100, amountInMinor);
+
+        // ------------------------------------------------------
+        // STRIPE CUSTOMER
+        // ------------------------------------------------------
+
+        let customer;
+
+        const existingUser =
+            await User.findOne({
+                identity: cleanedPhone
+            });
+
+        if (existingUser?.stripeCustomerId) {
+
+            customer =
+                await stripe.customers.retrieve(
+                    existingUser.stripeCustomerId
+                );
+
+        } else {
+
+            customer =
+                await stripe.customers.create({
+                    metadata: {
+                        phone: cleanedPhone,
+                        platform: "iNFLUENSA"
+                    },
+
+                    description:
+                        `iNFLUENSA IP Access: ${cleanedPhone}`
+                });
+
+            await User.findOneAndUpdate(
+                {
+                    identity: cleanedPhone
+                },
+                {
+                    $set: {
+                        stripeCustomerId:
+                            customer.id
+                    }
+                },
+                {
+                    upsert: true
+                }
+            );
+        }
+
+        // ------------------------------------------------------
+        // NO CONNECT
+        // NO TRANSFER_DATA
+        // NO CREATOR
+        //
+        // PLATFORM RETAINS THE PAYMENT
+        // ------------------------------------------------------
+
+        const paymentIntent =
+            await stripe.paymentIntents.create({
+                amount:
+                    amountInMinor,
+
+                currency,
+
+                customer:
+                    customer.id,
+
+                metadata: {
+                    phone:
+                        cleanedPhone,
+
+                    ipRegistrationID:
+                        ipRegistrationID.toString(),
+
+                    type:
+                        "ip_access",
+
+                    platform:
+                        "iNFLUENSA",
+
+                    originalAmountKES:
+                        IP_ACCESS_PRICE_KES,
+
+                    fxRate:
+                        currencyData.rate
+                },
+
+                automatic_payment_methods: {
+                    enabled: true
+                },
+
+                description:
+                    `iNFLUENSA IP Access - ${ipRegistrationID}`
+            });
+
+        // ------------------------------------------------------
+        // SAVE PENDING TRANSACTION
+        // ------------------------------------------------------
+
+        await createPendingIPAccessTransaction({
+            checkoutID:
+                paymentIntent.id,
+
+            ipRegistrationID,
+
+            phone:
+                cleanedPhone,
+
+            gateway:
+                "stripe",
+
+            currency:
+                currency.toUpperCase()
+        });
+
+        return {
+            success: true,
+
+            unlocked: false,
+
+            checkoutID:
+                paymentIntent.id,
+
+            clientSecret:
+                paymentIntent.client_secret,
+
+            customerId:
+                customer.id,
+
+            ipRegistrationID,
+
+            currency:
+                currency.toUpperCase(),
+
+            amountInLocal:
+                amountInMinor / 100,
+
+            fxRate:
+                currencyData.rate,
+
+            originalAmountKES:
+                IP_ACCESS_PRICE_KES
+        };
+
+    } catch (error) {
+
+        console.error(
+            "❌ IP ACCESS STRIPE ERROR:",
+            error.message
+        );
+
+        throw new Error(
+            "IP_ACCESS_PAYMENT_FAILED"
+        );
+    }
+};
+
+
+// ============================================================
+// UNIVERSAL IP ACCESS PAYMENT
+// ============================================================
+//
+// This is SEPARATE from your existing
+// triggerUniversalPush().
+//
+// Existing Post/Product payment logic stays untouched.
+// ============================================================
+
+const triggerUniversalIPAccess = async (
+    phone,
+    ipRegistrationID
+) => {
+
+    const cleanedPhone =
+        cleanPhone(phone);
+
+    if (!cleanedPhone) {
+        throw new Error(
+            "IDENT_SIGNAL_LOST"
+        );
+    }
+
+    if (!ipRegistrationID) {
+        throw new Error(
+            "IP_REGISTRATION_ID_REQUIRED"
+        );
+    }
+
+    // --------------------------------------------------------
+    // ALREADY PAID?
+    // --------------------------------------------------------
+
+    const alreadyPaid =
+        await hasPaidForIPAccess(
+            ipRegistrationID,
+            cleanedPhone
+        );
+
+    if (alreadyPaid) {
+        return {
+            success: true,
+            alreadyPaid: true,
+            unlocked: true,
+            ipRegistrationID
+        };
+    }
+
+    // --------------------------------------------------------
+    // KENYA → M-PESA
+    // --------------------------------------------------------
+
+    if (
+        cleanedPhone.startsWith("254")
+    ) {
+
+        console.log(
+            `🇰🇪 IP ACCESS → M-PESA | KES ${IP_ACCESS_PRICE_KES}`
+        );
+
+        return await triggerIPAccessMpesa(
+            cleanedPhone,
+            ipRegistrationID
+        );
+    }
+
+    // --------------------------------------------------------
+    // OTHER REGIONS → STRIPE
+    //
+    // Your existing international payment system remains
+    // untouched.
+    // --------------------------------------------------------
+
+    console.log(
+        `🌐 IP ACCESS → STRIPE | KES ${IP_ACCESS_PRICE_KES}`
+    );
+
+    return await triggerIPAccessStripe(
+        cleanedPhone,
+        ipRegistrationID
+    );
+};
 
 // =========================================================================
 // --- PASONA AI™ COGNITIVE & BIOMETRIC VERIFICATION PIPELINE ENGINES ---
@@ -3151,8 +3738,174 @@ app.post('/api/flw-webhook', async (req, res) => {
     }
     res.status(200).end();
 });
+ // ============================================================
+// START IP ACCESS PAYMENT
+// ============================================================
 
+app.post("/api/ip/access/pay", async (req, res) => {
 
+    try {
+
+        const {
+            phone,
+            ipRegistrationID
+        } = req.body;
+
+        if (!phone) {
+            return res.status(400).json({
+                success: false,
+                error: "PHONE_REQUIRED"
+            });
+        }
+
+        if (!ipRegistrationID) {
+            return res.status(400).json({
+                success: false,
+                error: "IP_REGISTRATION_ID_REQUIRED"
+            });
+        }
+
+        const result =
+            await triggerUniversalIPAccess(
+                phone,
+                ipRegistrationID
+            );
+
+        return res.json(result);
+
+    } catch (error) {
+
+        console.error(
+            "❌ IP ACCESS PAYMENT ROUTE:",
+            error.message
+        );
+
+        return res.status(500).json({
+            success: false,
+            error:
+                error.message ||
+                "IP_ACCESS_PAYMENT_FAILED"
+        });
+    }
+});
+// ============================================================
+// IP ACCESS — M-PESA CALLBACK HANDLER
+// KSh 10 per registered IP
+// 100% of access revenue belongs to iNFLUENSA
+// ============================================================
+
+async function handleIPAccessMpesaCallback(callbackData) {
+    try {
+        const stkCallback = callbackData?.Body?.stkCallback;
+
+        if (!stkCallback) {
+            console.log("⚠️ IP ACCESS: Invalid M-Pesa callback payload");
+            return;
+        }
+
+        const checkoutRequestID = stkCallback.CheckoutRequestID;
+        const resultCode = Number(stkCallback.ResultCode);
+        const resultDesc = stkCallback.ResultDesc || "";
+
+        if (!checkoutRequestID) {
+            console.log("⚠️ IP ACCESS: CheckoutRequestID missing");
+            return;
+        }
+
+        // Find the transaction created when the STK Push was initiated
+        const transaction = await Transaction.findOne({
+            checkoutID: checkoutRequestID,
+            type: "ip_access"
+        });
+
+        // Not an IP access transaction.
+        // Let your existing callback logic handle normal payments.
+        if (!transaction) {
+            return;
+        }
+
+        console.log(
+            `🛰️ IP ACCESS CALLBACK | ${checkoutRequestID} | CODE: ${resultCode}`
+        );
+
+        // ========================================================
+        // PAYMENT SUCCESS
+        // ========================================================
+
+        if (resultCode === 0) {
+
+            let receiptNumber = null;
+
+            // Extract M-Pesa receipt number
+            if (Array.isArray(stkCallback.CallbackMetadata?.Item)) {
+
+                const receiptItem =
+                    stkCallback.CallbackMetadata.Item.find(
+                        item => item.Name === "MpesaReceiptNumber"
+                    );
+
+                if (receiptItem) {
+                    receiptNumber = receiptItem.Value;
+                }
+            }
+
+            // Mark payment completed
+            await Transaction.findByIdAndUpdate(
+                transaction._id,
+                {
+                    $set: {
+                        status: "completed",
+                        platformFee: transaction.amountPaid,
+                        creatorAmount: 0,
+                        receiptNumber: receiptNumber,
+                        resultCode: resultCode,
+                        resultDesc: resultDesc,
+                        completedAt: new Date()
+                    }
+                }
+            );
+
+            console.log(
+                `✅ IP ACCESS PAID | Registration: ${transaction.ipRegistrationID} | ` +
+                `Phone: ${transaction.userPhone} | ` +
+                `Amount: ${transaction.amountPaid} KES | ` +
+                `Receipt: ${receiptNumber || "N/A"}`
+            );
+
+            return;
+        }
+
+        // ========================================================
+        // PAYMENT FAILED / CANCELLED
+        // ========================================================
+
+        await Transaction.findByIdAndUpdate(
+            transaction._id,
+            {
+                $set: {
+                    status: "failed",
+                    resultCode: resultCode,
+                    resultDesc: resultDesc,
+                    failedAt: new Date()
+                }
+            }
+        );
+
+        console.log(
+            `❌ IP ACCESS PAYMENT FAILED | ` +
+            `Registration: ${transaction.ipRegistrationID} | ` +
+            `Code: ${resultCode} | ` +
+            `Reason: ${resultDesc}`
+        );
+
+    } catch (error) {
+
+        console.error(
+            "❌ IP ACCESS CALLBACK ERROR:",
+            error.message
+        );
+    }
+}
 // ✅ Explicitly pass express.raw middleware to preserve raw Buffer for Stripe
 app.post('/api/stripe-webhook', express.raw({ type: 'application/json' }), async (req, res) => {
     const sig = req.headers['stripe-signature'];
@@ -3396,7 +4149,13 @@ app.post('/api/posts/:id/unlock', async (req, res) => {
 });
 app.post('/api/mpesa/stk/callback', async (req, res) => {
     try {
+         // ========================================================
 
+        // NEW: HANDLE REGISTERED-IP ACCESS PAYMENTS
+
+        // ========================================================
+
+        await handleIPAccessMpesaCallback(req.body);
         const callback =
             req.body?.Body?.stkCallback;
 
