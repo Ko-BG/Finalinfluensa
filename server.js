@@ -13,6 +13,7 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const router = express.Router();
 const dns = require('dns');
 dns.setDefaultResultOrder('ipv4first');
+const IPRegistration = require('./models/IPRegistration'); // Adjust relative path if needed
 
  
 
@@ -683,6 +684,8 @@ const postSchema = new mongoose.Schema({
 const Post = mongoose.model('Post', postSchema);
 
 
+const mongoose = require("mongoose");
+
 const IPFileSchema = new mongoose.Schema({
     originalName: String,
     storedName: String,
@@ -709,6 +712,12 @@ const IPRegistrationSchema = new mongoose.Schema({
         type: String,
         required: true,
         unique: true,
+        index: true
+    },
+
+    // Content Hash for duplicate checks
+    contentHash: {
+        type: String,
         index: true
     },
 
@@ -779,11 +788,8 @@ const IPRegistrationSchema = new mongoose.Schema({
     timestamps: true
 });
 
-module.exports =
-    mongoose.model(
-        "IPRegistration",
-        IPRegistrationSchema
-    );
+const IPRegistration = mongoose.model("IPRegistration", IPRegistrationSchema);
+
 const userSchema = new mongoose.Schema({ 
     identity: { type: String, unique: true, index: true }, 
     afroCoins: { type: Number, default: 0 },
