@@ -7729,44 +7729,48 @@ app.get('/api/ip/registrations', async (req, res) => {
     }
 });
 // ============================================================
-// IP ACCESS — VIEW RECORD AFTER PAYMENT
-// ONLY LAST 7 CHARACTERS OF IP-CID ARE VISIBLE
+// IP ACCESS — VIEW FULL RECORD AFTER PAYMENT
 // ============================================================
+
 app.get('/api/ip/registrations/:id/access', async (req, res) => {
     try {
         const registrationId = req.params.id;
-        const phone = req.query.phone;
+
+        // Use the authenticated user's existing M-Pesa number
+        const phone =
+            req.user?.phone ||
+            req.user?.phoneNumber ||
+            req.user?.mpesaPhone;
+
         if (!registrationId) {
             return res.status(400).json({
                 success: false,
                 error: "IP_REGISTRATION_ID_REQUIRED"
             });
         }
+
         if (!phone) {
-            return res.status(400).json({
+            return res.status(401).json({
                 success: false,
-                error: "PHONE_REQUIRED"
+                error: "MPESA_PHONE_NOT_FOUND"
             });
         }
-        // --------------------------------------------------------
-        // FIND REGISTRATION
-        // --------------------------------------------------------
-        const registration = await IPRegistration
-            .findById(registrationId)
-            .lean();
+
+        const registration =
+            await IPRegistration.findById(registrationId).lean();
+
         if (!registration) {
             return res.status(404).json({
                 success: false,
                 error: "IP_REGISTRATION_NOT_FOUND"
             });
         }
-        // --------------------------------------------------------
-        // VERIFY PAYMENT
-        // --------------------------------------------------------
+
         const paid = await hasPaidForIPAccess(
             registrationId,
             phone
         );
+
         if (!paid) {
             return res.status(402).json({
                 success: false,
@@ -7776,25 +7780,18 @@ app.get('/api/ip/registrations/:id/access', async (req, res) => {
                 currency: "KES"
             });
         }
-        // --------------------------------------------------------
-        // MASK IP-CID
-        // ONLY LAST 7 CHARACTERS ARE EXPOSED
-        // --------------------------------------------------------
+
+        // ONLY LAST 7 CHARACTERS ARE RELEASED
         const maskedIpCid = registration.ipCid
             ? `••••••••••••••••••••••${String(registration.ipCid).slice(-7)}`
             : null;
-        // --------------------------------------------------------
-        // RETURN RECORD
-        // PAYMENT VERIFIED
-        // FULL IP-CID REMAINS HIDDEN
-        // --------------------------------------------------------
+
         return res.json({
             success: true,
             paid: true,
             registration: {
                 id: registration._id,
                 cid: registration.cid,
-                // Only the last 7 characters of the IP-CID are visible
                 ipCid: maskedIpCid,
                 ipType: registration.ipType,
                 title: registration.title,
@@ -7810,11 +7807,11 @@ app.get('/api/ip/registrations/:id/access', async (req, res) => {
                 files: registration.files
             }
         });
+
     } catch (error) {
-        console.error(
-            "❌ IP ACCESS ERROR:",
-            error
-        );
+
+        console.error("❌ IP ACCESS ERROR:", error);
+
         return res.status(500).json({
             success: false,
             error: "IP_ACCESS_FAILED",
@@ -7829,15 +7826,21 @@ app.get('/api/ip/registrations/:id/access', async (req, res) => {
 app.post("/api/ip/access/pay", async (req, res) => {
     try {
 
-        const {
-            phone,
-            ipRegistrationID
-        } = req.body;
+        const { ipRegistrationID } = req.body;
+
+        const phone =
+            req.user?.phone ||
+            req.user?.phoneNumber ||
+            req.user?.mpesaPhone ||
+            req.user?.mobile ||
+            req.user?.phone_number ||
+            req.body?.phone;
 
         if (!phone) {
-            return res.status(400).json({
+            return res.status(401).json({
                 success: false,
-                error: "PHONE_REQUIRED"
+                error: "USER_PHONE_NOT_FOUND",
+                message: "Your registered M-Pesa phone number could not be found. Please log in again."
             });
         }
 
@@ -7868,6 +7871,90 @@ app.post("/api/ip/access/pay", async (req, res) => {
             error:
                 error.message ||
                 "IP_ACCESS_PAYMENT_FAILED"
+        });
+    }
+});
+// ============================================================
+// IP-CID — PROTECTED DOWNLOAD
+// ============================================================
+
+app.get('/api/ip/registrations/:id/ipcid/download', async (req, res) => {
+    try {
+
+        const registrationId = req.params.id;
+
+        // Same authenticated M-Pesa number
+        const phone =
+            req.user?.phone ||
+            req.user?.phoneNumber ||
+            req.user?.mpesaPhone;
+
+        if (!registrationId) {
+            return res.status(400).json({
+                success: false,
+                error: "IP_REGISTRATION_ID_REQUIRED"
+            });
+        }
+
+        if (!phone) {
+            return res.status(401).json({
+                success: false,
+                error: "MPESA_PHONE_NOT_FOUND"
+            });
+        }
+
+        const registration =
+            await IPRegistration.findById(registrationId).lean();
+
+        if (!registration) {
+            return res.status(404).json({
+                success: false,
+                error: "IP_REGISTRATION_NOT_FOUND"
+            });
+        }
+
+        const paid = await hasPaidForIPAccess(
+            registrationId,
+            phone
+        );
+
+        if (!paid) {
+            return res.status(402).json({
+                success: false,
+                paymentRequired: true,
+                error: "IP_ACCESS_PAYMENT_REQUIRED",
+                amount: 10,
+                currency: "KES"
+            });
+        }
+
+        if (!registration.ipCid) {
+            return res.status(404).json({
+                success: false,
+                error: "IP_CID_NOT_FOUND"
+            });
+        }
+
+        res.setHeader(
+            "Content-Type",
+            "text/plain; charset=utf-8"
+        );
+
+        res.setHeader(
+            "Content-Disposition",
+            `attachment; filename="IP-CID-${registrationId}.txt"`
+        );
+
+        return res.send(registration.ipCid);
+
+    } catch (error) {
+
+        console.error("❌ IP-CID DOWNLOAD ERROR:", error);
+
+        return res.status(500).json({
+            success: false,
+            error: "IP_CID_DOWNLOAD_FAILED",
+            message: error.message
         });
     }
 });
