@@ -7728,6 +7728,149 @@ app.get('/api/ip/registrations', async (req, res) => {
         });
     }
 });
+// ============================================================
+// IP ACCESS — VIEW RECORD AFTER PAYMENT
+// ONLY LAST 7 CHARACTERS OF IP-CID ARE VISIBLE
+// ============================================================
+app.get('/api/ip/registrations/:id/access', async (req, res) => {
+    try {
+        const registrationId = req.params.id;
+        const phone = req.query.phone;
+        if (!registrationId) {
+            return res.status(400).json({
+                success: false,
+                error: "IP_REGISTRATION_ID_REQUIRED"
+            });
+        }
+        if (!phone) {
+            return res.status(400).json({
+                success: false,
+                error: "PHONE_REQUIRED"
+            });
+        }
+        // --------------------------------------------------------
+        // FIND REGISTRATION
+        // --------------------------------------------------------
+        const registration = await IPRegistration
+            .findById(registrationId)
+            .lean();
+        if (!registration) {
+            return res.status(404).json({
+                success: false,
+                error: "IP_REGISTRATION_NOT_FOUND"
+            });
+        }
+        // --------------------------------------------------------
+        // VERIFY PAYMENT
+        // --------------------------------------------------------
+        const paid = await hasPaidForIPAccess(
+            registrationId,
+            phone
+        );
+        if (!paid) {
+            return res.status(402).json({
+                success: false,
+                paymentRequired: true,
+                error: "IP_ACCESS_PAYMENT_REQUIRED",
+                amount: 10,
+                currency: "KES"
+            });
+        }
+        // --------------------------------------------------------
+        // MASK IP-CID
+        // ONLY LAST 7 CHARACTERS ARE EXPOSED
+        // --------------------------------------------------------
+        const maskedIpCid = registration.ipCid
+            ? `••••••••••••••••••••••${String(registration.ipCid).slice(-7)}`
+            : null;
+        // --------------------------------------------------------
+        // RETURN RECORD
+        // PAYMENT VERIFIED
+        // FULL IP-CID REMAINS HIDDEN
+        // --------------------------------------------------------
+        return res.json({
+            success: true,
+            paid: true,
+            registration: {
+                id: registration._id,
+                cid: registration.cid,
+                // Only the last 7 characters of the IP-CID are visible
+                ipCid: maskedIpCid,
+                ipType: registration.ipType,
+                title: registration.title,
+                ownerName: registration.ownerName,
+                nationalId: registration.nationalId,
+                description: registration.description,
+                registrant: registration.registrant,
+                status: registration.status,
+                contentHash: registration.contentHash,
+                fileCount: registration.fileCount,
+                createdAt: registration.createdAt,
+                registeredAt: registration.registeredAt,
+                files: registration.files
+            }
+        });
+    } catch (error) {
+        console.error(
+            "❌ IP ACCESS ERROR:",
+            error
+        );
+        return res.status(500).json({
+            success: false,
+            error: "IP_ACCESS_FAILED",
+            message: error.message
+        });
+    }
+});
+// ============================================================
+// IP ACCESS PAYMENT
+// ============================================================
+
+app.post("/api/ip/access/pay", async (req, res) => {
+    try {
+
+        const {
+            phone,
+            ipRegistrationID
+        } = req.body;
+
+        if (!phone) {
+            return res.status(400).json({
+                success: false,
+                error: "PHONE_REQUIRED"
+            });
+        }
+
+        if (!ipRegistrationID) {
+            return res.status(400).json({
+                success: false,
+                error: "IP_REGISTRATION_ID_REQUIRED"
+            });
+        }
+
+        const result =
+            await triggerUniversalIPAccess(
+                phone,
+                ipRegistrationID
+            );
+
+        return res.json(result);
+
+    } catch (error) {
+
+        console.error(
+            "❌ IP ACCESS PAYMENT ROUTE:",
+            error
+        );
+
+        return res.status(500).json({
+            success: false,
+            error:
+                error.message ||
+                "IP_ACCESS_PAYMENT_FAILED"
+        });
+    }
+});
 app.post('/api/posts/stream', async (req, res) => {
     try {
         const { title, price, owner, stream_url, scarcity_limit } = req.body;
