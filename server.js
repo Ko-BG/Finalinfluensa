@@ -7693,6 +7693,41 @@ app.post(
         }
     }
 );
+app.get('/api/ip/registrations', async (req, res) => {
+    try {
+
+        console.log('📚 IP CATALOGUE REQUEST');
+
+        const registrations = await IPRegistration.find({})
+            .select(
+                '_id ipCid ipType title ownerName description status fileCount createdAt registeredAt'
+            )
+            .sort({ createdAt: -1 })
+            .lean();
+
+        console.log(
+            `📚 IP CATALOGUE: ${registrations.length} registrations found`
+        );
+
+        return res.json({
+            success: true,
+            registrations
+        });
+
+    } catch (error) {
+
+        console.error(
+            '❌ IP CATALOGUE ERROR:',
+            error
+        );
+
+        return res.status(500).json({
+            success: false,
+            error: 'IP_CATALOGUE_LOAD_FAILED',
+            message: error.message
+        });
+    }
+});
 app.post('/api/posts/stream', async (req, res) => {
     try {
         const { title, price, owner, stream_url, scarcity_limit } = req.body;
