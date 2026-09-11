@@ -341,7 +341,34 @@
   ></div>
 
 </div>
+<!-- ===================== TAB CONTENTS ===================== -->
 
+<!-- Tab 0: IP Marketplace -->
+<div id="tab-content-0" class="tab-content">
+  <!-- Put your IP Marketplace content here -->
+  <div class="space-y-8">
+    <h2 class="text-2xl font-bold text-yellow-400">IP Marketplace</h2>
+    <!-- your marketplace cards / filters / listings -->
+  </div>
+</div>
+
+<!-- Tab 1: E-Commerce Store -->
+<div id="tab-content-1" class="tab-content hidden">
+  <!-- Put your E-Commerce Store content here -->
+  <div class="space-y-8">
+    <h2 class="text-2xl font-bold text-emerald-400">E-Commerce Store</h2>
+    <!-- your products / cart / store UI -->
+  </div>
+</div>
+
+<!-- Tab 2: IP Catalogue -->
+<div id="tab-content-2" class="tab-content hidden">
+  <!-- Put your IP Catalogue content here -->
+  <div class="space-y-8">
+    <h2 class="text-2xl font-bold text-purple-400">IP Catalogue</h2>
+    <!-- your catalogue grid / search / details -->
+  </div>
+</div>
 
 <!-- ========================================================= -->
 <!-- IP CATALOGUE -->
@@ -3148,6 +3175,90 @@ async function downloadIPCID(ip) {
             'Unable to download the IP-CID.'
         );
     }
+}
+async function downloadIPFiles(ip) {
+  try {
+    const registrationId = ip._id || ip.id || ip.registrationId;
+
+    if (!registrationId) {
+      alert('Unable to download files for this IP registration.');
+      return;
+    }
+
+    // 1. Check access first
+    const accessResponse = await fetch(
+      `${API_URL}/ip/registrations/${encodeURIComponent(registrationId)}/access`,
+      {
+        method: 'GET',
+        credentials: 'include'
+      }
+    );
+
+    // Already paid → download files
+    if (accessResponse.ok) {
+      const downloadResponse = await fetch(
+        `${API_URL}/ip/registrations/${encodeURIComponent(registrationId)}/files/download`,
+        {
+          method: 'GET',
+          credentials: 'include'
+        }
+      );
+
+      if (!downloadResponse.ok) {
+        throw new Error(`File download failed: ${downloadResponse.status}`);
+      }
+
+      const blob = await downloadResponse.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = `IP-Files-${registrationId}.zip`; // or whatever your server returns
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+
+      return;
+    }
+
+    // Payment required
+    if (accessResponse.status === 402) {
+      const paymentResponse = await fetch(`${API_URL}/ip/access/pay`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ ipRegistrationID: registrationId })
+      });
+
+      const paymentResult = await paymentResponse.json().catch(() => ({}));
+
+      if (!paymentResponse.ok || !paymentResult.success) {
+        throw new Error(
+          paymentResult.error ||
+          paymentResult.message ||
+          'Unable to initiate IP access payment.'
+        );
+      }
+
+      alert(
+        'M-Pesa STK Push sent to your registered number.\n\n' +
+        'Enter your M-Pesa PIN on your phone to complete the KES 10 payment.'
+      );
+      return;
+    }
+
+    const errorData = await accessResponse.json().catch(() => ({}));
+    throw new Error(
+      errorData.error ||
+      errorData.message ||
+      'Unable to access this IP registration.'
+    );
+
+  } catch (error) {
+    console.error('❌ IP FILES DOWNLOAD ERROR:', error);
+    alert(error.message || 'Unable to download the IP files.');
+  }
 }
 // Route: /payouts/claim
 async function handleClaimPayouts(countryCode = 'US') {
