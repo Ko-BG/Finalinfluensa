@@ -3738,61 +3738,6 @@ app.post('/api/flw-webhook', async (req, res) => {
     }
     res.status(200).end();
 });
- // ============================================================
-// START IP ACCESS PAYMENT
-// ============================================================
-
-app.post("/api/ip/access/pay", async (req, res) => {
-
-    try {
-
-        const {
-            phone,
-            ipRegistrationID
-        } = req.body;
-
-        if (!phone) {
-            return res.status(400).json({
-                success: false,
-                error: "PHONE_REQUIRED"
-            });
-        }
-
-        if (!ipRegistrationID) {
-            return res.status(400).json({
-                success: false,
-                error: "IP_REGISTRATION_ID_REQUIRED"
-            });
-        }
-
-        const result =
-            await triggerUniversalIPAccess(
-                phone,
-                ipRegistrationID
-            );
-
-        return res.json(result);
-
-    } catch (error) {
-
-        console.error(
-            "❌ IP ACCESS PAYMENT ROUTE:",
-            error.message
-        );
-
-        return res.status(500).json({
-            success: false,
-            error:
-                error.message ||
-                "IP_ACCESS_PAYMENT_FAILED"
-        });
-    }
-});
-// ============================================================
-// IP ACCESS — M-PESA CALLBACK HANDLER
-// KSh 10 per registered IP
-// 100% of access revenue belongs to iNFLUENSA
-// ============================================================
 
 async function handleIPAccessMpesaCallback(callbackData) {
     try {
@@ -8019,6 +7964,217 @@ app.get('/api/ip/registrations/:id/ipcid/download', async (req, res) => {
         return res.status(500).json({
             success: false,
             error: "IP_CID_DOWNLOAD_FAILED",
+            message: error.message
+        });
+    }
+});
+// ============================================================
+// CHECK ACCESS (used by viewRegisteredIP)
+// GET /api/ip/registrations/:id/access
+// ============================================================
+app.get('/api/ip/registrations/:id/access', async (req, res) => {
+    try {
+        const registrationId = req.params.id;
+        const userId = req.user?._id;
+
+        if (!userId) {
+            return res.status(401).json({
+                success: false,
+                error: "AUTHENTICATION_REQUIRED"
+            });
+        }
+
+        if (!registrationId) {
+            return res.status(400).json({
+                success: false,
+                error: "IP_REGISTRATION_ID_REQUIRED"
+            });
+        }
+
+        const user = await User.findById(userId).lean();
+
+        if (!user) {
+            return res.status(401).json({
+                success: false,
+                error: "USER_NOT_FOUND"
+            });
+        }
+
+        const phone = user.identity;
+
+        if (!phone) {
+            return res.status(401).json({
+                success: false,
+                error: "MPESA_PHONE_NOT_FOUND"
+            });
+        }
+
+        const cleanedPhone = cleanPhone(phone);
+
+        if (!cleanedPhone) {
+            return res.status(401).json({
+                success: false,
+                error: "INVALID_MPESA_PHONE"
+            });
+        }
+
+        // Check payment
+        const paid = await hasPaidForIPAccess(registrationId, cleanedPhone);
+
+        if (!paid) {
+            return res.status(402).json({
+                success: false,
+                paid: false,
+                paymentRequired: true,
+                error: "IP_ACCESS_PAYMENT_REQUIRED",
+                amount: 10,
+                currency: "KES"
+            });
+        }
+
+        // Paid → return registration
+        const registration = await IPRegistration.findById(registrationId).lean();
+
+        if (!registration) {
+            return res.status(404).json({
+                success: false,
+                error: "IP_REGISTRATION_NOT_FOUND"
+            });
+        }
+
+        return res.json({
+            success: true,
+            paid: true,
+            registration: {
+                _id: registration._id,
+                ipCid: registration.ipCid,
+                cid: registration.cid,
+                ipType: registration.ipType,
+                title: registration.title,
+                ownerName: registration.ownerName,
+                description: registration.description,
+                registrant: registration.registrant,
+                status: registration.status,
+                contentHash: registration.contentHash,
+                fileCount: registration.fileCount || (registration.files?.length || 0),
+                registeredAt: registration.registeredAt || registration.createdAt
+            }
+        });
+
+    } catch (error) {
+        console.error("❌ IP ACCESS CHECK ERROR:", error);
+
+        return res.status(500).json({
+            success: false,
+            error: "IP_ACCESS_CHECK_FAILED",
+            message: error.message
+        });
+    }
+});
+
+
+// ============================================================
+// DOWNLOAD FILES (ZIP)
+// GET /api/ip/registrations/:id/files/download
+// ============================================================
+app.get('/api/ip/registrations/:id/files/download', async (req, res) => {
+    try {
+        const registrationId = req.params.id;
+        const userId = req.user?._id;
+
+        if (!userId) {
+            return res.status(401).json({
+                success: false,
+                error: "AUTHENTICATION_REQUIRED"
+            });
+        }
+
+        if (!registrationId) {
+            return res.status(400).json({
+                success: false,
+                error: "IP_REGISTRATION_ID_REQUIRED"
+            });
+        }
+
+        const user = await User.findById(userId).lean();
+
+        if (!user) {
+            return res.status(401).json({
+                success: false,
+                error: "USER_NOT_FOUND"
+            });
+        }
+
+        const phone = user.identity;
+        const cleanedPhone = cleanPhone(phone);
+
+        if (!cleanedPhone) {
+            return res.status(401).json({
+                success: false,
+                error: "INVALID_MPESA_PHONE"
+            });
+        }
+
+        // Must be paid
+        const paid = await hasPaidForIPAccess(registrationId, cleanedPhone);
+
+        if (!paid) {
+            return res.status(402).json({
+                success: false,
+                paymentRequired: true,
+                error: "IP_ACCESS_PAYMENT_REQUIRED",
+                amount: 10,
+                currency: "KES"
+            });
+        }
+
+        const registration = await IPRegistration.findById(registrationId).lean();
+
+        if (!registration) {
+            return res.status(404).json({
+                success: false,
+                error: "IP_REGISTRATION_NOT_FOUND"
+            });
+        }
+
+        if (!registration.files || registration.files.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: "NO_FILES_FOUND"
+            });
+        }
+
+        // Create ZIP
+        const archiver = require('archiver');
+        const fs = require('fs');
+        const path = require('path');
+
+        const archive = archiver('zip', { zlib: { level: 9 } });
+
+        res.setHeader('Content-Type', 'application/zip');
+        res.setHeader(
+            'Content-Disposition',
+            `attachment; filename="IP-Files-${registrationId}.zip"`
+        );
+
+        archive.pipe(res);
+
+        for (const file of registration.files) {
+            if (file.path && fs.existsSync(file.path)) {
+                archive.file(file.path, {
+                    name: file.originalName || file.filename || path.basename(file.path)
+                });
+            }
+        }
+
+        await archive.finalize();
+
+    } catch (error) {
+        console.error("❌ IP FILES DOWNLOAD ERROR:", error);
+
+        return res.status(500).json({
+            success: false,
+            error: "IP_FILES_DOWNLOAD_FAILED",
             message: error.message
         });
     }
