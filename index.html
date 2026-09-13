@@ -303,145 +303,784 @@
 
 
 </aside>
-<!-- TAB NAVIGATION -->
-<!-- Enhanced Tab Navigation -->
-<div class="flex border-b border-white/10 mb-10 relative">
+<!-- =========================================================
+     iNFLUENSA — MAIN TAB NAVIGATION
+========================================================= -->
 
-  <button
-    onclick="switchTab(0)"
-    id="tab-ip"
-    class="tab-active flex-1 py-5 text-center font-bold uppercase tracking-[0.5px] text-sm transition-all duration-300 flex items-center justify-center gap-2 hover:text-yellow-400"
-  >
-    <span class="text-lg">🌐</span>
-    IP Marketplace
-  </button>
+<div class="influensa-tabs-wrapper">
 
-  <button
-    onclick="switchTab(1)"
-    id="tab-ecom"
-    class="flex-1 py-5 text-center font-bold uppercase tracking-[0.5px] text-sm transition-all duration-300 flex items-center justify-center gap-2 hover:text-emerald-400"
-  >
-    <span class="text-lg">🛍️</span>
-    E-Commerce Store
-  </button>
-
-  <button
-    onclick="switchTab(2)"
-    id="tab-catalogue"
-    class="flex-1 py-5 text-center font-bold uppercase tracking-[0.5px] text-sm transition-all duration-300 flex items-center justify-center gap-2 hover:text-purple-400"
-  >
-    <span class="text-lg">📚</span>
-    IP Catalogue
-  </button>
-
-  <!-- Sliding Indicator -->
   <div
-    id="tab-indicator"
-    class="absolute bottom-0 h-0.5 bg-gradient-to-r from-yellow-400 via-purple-400 to-emerald-400 transition-all duration-500 rounded-full"
-  ></div>
+    id="main-tabs"
+    class="influensa-tabs"
+    role="tablist"
+    aria-label="iNFLUENSA marketplace navigation"
+  >
 
-</div>
-<!-- ===================== TAB CONTENTS ===================== -->
+    <!-- IP MARKETPLACE -->
+    <button
+      type="button"
+      id="tab-ip"
+      class="influensa-tab tab-active"
+      role="tab"
+      aria-selected="true"
+      aria-controls="tab-content-0"
+      onclick="switchTab(0)"
+    >
+      <span class="tab-icon">🌐</span>
+      <span class="tab-label">IP Marketplace</span>
+    </button>
 
-<!-- Tab 0: IP Marketplace -->
-<div id="tab-content-0" class="tab-content">
-  <!-- Put your IP Marketplace content here -->
-  <div class="space-y-8">
-    <h2 class="text-2xl font-bold text-yellow-400">IP Marketplace</h2>
-    <!-- your marketplace cards / filters / listings -->
+
+    <!-- E-COMMERCE -->
+    <button
+      type="button"
+      id="tab-ecom"
+      class="influensa-tab"
+      role="tab"
+      aria-selected="false"
+      aria-controls="tab-content-1"
+      onclick="switchTab(1)"
+    >
+      <span class="tab-icon">🛍️</span>
+      <span class="tab-label">E-Commerce Store</span>
+    </button>
+
+
+    <!-- IP CATALOGUE -->
+    <button
+      type="button"
+      id="tab-catalogue"
+      class="influensa-tab"
+      role="tab"
+      aria-selected="false"
+      aria-controls="tab-content-2"
+      onclick="switchTab(2)"
+    >
+      <span class="tab-icon">📚</span>
+      <span class="tab-label">IP Catalogue</span>
+    </button>
+
+
+    <!-- SLIDING ACTIVE INDICATOR -->
+    <span
+      id="tab-indicator"
+      class="tab-indicator"
+      aria-hidden="true"
+    ></span>
+
   </div>
+
 </div>
 
-<!-- Tab 1: E-Commerce Store -->
-<div id="tab-content-1" class="tab-content hidden">
-  <!-- Put your E-Commerce Store content here -->
-  <div class="space-y-8">
-    <h2 class="text-2xl font-bold text-emerald-400">E-Commerce Store</h2>
-    <!-- your products / cart / store UI -->
+
+<!-- =========================================================
+     TAB CONTENT
+========================================================= -->
+
+<!-- =========================================================
+     TAB 0 — IP MARKETPLACE
+========================================================= -->
+
+<section
+  id="tab-content-0"
+  class="tab-content"
+  role="tabpanel"
+  aria-labelledby="tab-ip"
+>
+
+  <div class="tab-section">
+
+    <div class="section-eyebrow marketplace-eyebrow">
+      iNFLUENSA IP MARKETPLACE
+    </div>
+
+    <h2 class="section-title marketplace-title">
+      IP Marketplace
+    </h2>
+
+    <p class="section-description">
+      Discover, license, purchase and monetize protected intellectual property.
+    </p>
+
+    <!-- Marketplace content goes here -->
+
   </div>
-</div>
 
-<!-- Tab 2: IP Catalogue -->
-<div id="tab-content-2" class="tab-content hidden">
-  <!-- Put your IP Catalogue content here -->
-  <div class="space-y-8">
-    <h2 class="text-2xl font-bold text-purple-400">IP Catalogue</h2>
-    <!-- your catalogue grid / search / details -->
+</section>
+
+
+<!-- =========================================================
+     TAB 1 — E-COMMERCE STORE
+========================================================= -->
+
+<section
+  id="tab-content-1"
+  class="tab-content hidden"
+  role="tabpanel"
+  aria-labelledby="tab-ecom"
+>
+
+  <div class="tab-section">
+
+    <div class="section-eyebrow ecommerce-eyebrow">
+      iNFLUENSA DIGITAL COMMERCE
+    </div>
+
+    <h2 class="section-title ecommerce-title">
+      E-Commerce Store
+    </h2>
+
+    <p class="section-description">
+      Shop products, digital assets and creator offerings secured through
+      the iNFLUENSA protocol.
+    </p>
+
+    <!-- Store content goes here -->
+
   </div>
-</div>
 
-<!-- ========================================================= -->
-<!-- IP CATALOGUE -->
-<!-- ========================================================= -->
+</section>
 
-<div id="catalogue-content" class="hidden">
 
-  <!-- Catalogue Header -->
-  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+<!-- =========================================================
+     TAB 2 — IP CATALOGUE
+========================================================= -->
 
-    <div>
+<section
+  id="tab-content-2"
+  class="tab-content hidden"
+  role="tabpanel"
+  aria-labelledby="tab-catalogue"
+>
 
-      <div class="text-[9px] text-purple-400 font-black uppercase tracking-[0.3em] mb-1">
-        iNFLUENSA IP REGISTRY
+  <div class="catalogue-container">
+
+    <!-- =====================================================
+         CATALOGUE HEADER
+    ====================================================== -->
+
+    <div class="catalogue-header">
+
+      <div class="catalogue-heading">
+
+        <div class="catalogue-eyebrow">
+          iNFLUENSA IP REGISTRY
+        </div>
+
+        <h2 class="catalogue-title">
+          My IP Catalogue
+        </h2>
+
+        <p class="catalogue-description">
+          View, manage and download your registered intellectual property.
+        </p>
+
       </div>
 
-      <h2 class="text-2xl font-black text-white uppercase tracking-tight">
-        My IP Catalogue
-      </h2>
 
-      <p class="text-xs text-slate-400 mt-1">
-        View, manage and download your registered intellectual property.
+      <!-- REFRESH BUTTON -->
+
+      <button
+        type="button"
+        onclick="loadIPCatalogue()"
+        class="catalogue-refresh"
+      >
+        <span class="refresh-icon">↻</span>
+        <span>Refresh</span>
+      </button>
+
+    </div>
+
+
+    <!-- =====================================================
+         LOADING STATE
+    ====================================================== -->
+
+    <div
+      id="catalogue-loading"
+      class="catalogue-state hidden"
+      aria-live="polite"
+    >
+
+      <div class="catalogue-spinner"></div>
+
+      <p>
+        Loading your registered IP...
       </p>
 
     </div>
 
-    <button
-      onclick="loadIPCatalogue()"
-      class="px-4 py-2 rounded-lg border border-purple-500/30 bg-purple-500/10 text-purple-300 text-xs font-bold uppercase hover:bg-purple-500/20 transition"
+
+    <!-- =====================================================
+         EMPTY STATE
+    ====================================================== -->
+
+    <div
+      id="catalogue-empty"
+      class="catalogue-empty hidden"
     >
-      ↻ Refresh
-    </button>
 
-  </div>
+      <div class="empty-icon">
+        📚
+      </div>
 
+      <h3>
+        No Registered IP Yet
+      </h3>
 
-  <!-- Loading -->
-  <div
-    id="catalogue-loading"
-    class="hidden text-center py-12 text-slate-400 text-sm"
-  >
-    Loading your registered IP...
-  </div>
+      <p>
+        Your registered intellectual property will appear here.
+      </p>
 
-
-  <!-- Empty State -->
-  <div
-    id="catalogue-empty"
-    class="hidden text-center py-14 border border-white/10 rounded-2xl bg-white/[0.02]"
-  >
-
-    <div class="text-4xl mb-3">
-      📚
     </div>
 
-    <h3 class="text-white font-bold text-lg">
-      No Registered IP Yet
-    </h3>
 
-    <p class="text-slate-500 text-xs mt-2">
-      Your registered intellectual property will appear here.
-    </p>
+    <!-- =====================================================
+         CATALOGUE GRID
+    ====================================================== -->
+
+    <div
+      id="ip-catalogue-grid"
+      class="ip-catalogue-grid"
+    ></div>
 
   </div>
 
+</section>
 
-  <!-- Catalogue Grid -->
-  <div
-    id="ip-catalogue-grid"
-    class="grid grid-cols-1 md:grid-cols-2 gap-4"
-  ></div>
 
-</div>
+<!-- =========================================================
+     iNFLUENSA TAB CSS
+========================================================= -->
+
+<style>
+
+  /* =========================================================
+     MAIN TAB CONTAINER
+  ========================================================= */
+
+  .influensa-tabs-wrapper {
+    width: 100%;
+    margin-bottom: 2.5rem;
+  }
+
+
+  .influensa-tabs {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    width: 100%;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+
+
+  /* =========================================================
+     TAB BUTTON
+  ========================================================= */
+
+  .influensa-tab {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.55rem;
+
+    min-height: 64px;
+    padding: 1rem 0.75rem;
+
+    border: 0;
+    background: transparent;
+
+    color: rgba(148,163,184,0.75);
+
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+
+    cursor: pointer;
+
+    transition:
+      color 0.25s ease,
+      background 0.25s ease,
+      transform 0.25s ease;
+  }
+
+
+  .influensa-tab:hover {
+    color: #ffffff;
+    background: rgba(255,255,255,0.025);
+  }
+
+
+  .influensa-tab:active {
+    transform: translateY(1px);
+  }
+
+
+  /* =========================================================
+     ACTIVE TAB
+  ========================================================= */
+
+  .influensa-tab.tab-active {
+    color: #ffffff;
+  }
+
+
+  #tab-ip.tab-active {
+    color: #facc15;
+  }
+
+
+  #tab-ecom.tab-active {
+    color: #34d399;
+  }
+
+
+  #tab-catalogue.tab-active {
+    color: #c084fc;
+  }
+
+
+  /* =========================================================
+     TAB ICON
+  ========================================================= */
+
+  .tab-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    width: 28px;
+    height: 28px;
+
+    font-size: 1rem;
+
+    transition:
+      transform 0.3s ease,
+      filter 0.3s ease;
+  }
+
+
+  .influensa-tab:hover .tab-icon,
+  .influensa-tab.tab-active .tab-icon {
+    transform: translateY(-1px) scale(1.08);
+  }
+
+
+  /* =========================================================
+     SLIDING INDICATOR
+  ========================================================= */
+
+  .tab-indicator {
+    position: absolute;
+
+    left: 0;
+    bottom: -1px;
+
+    width: 33.333333%;
+    height: 3px;
+
+    border-radius: 999px;
+
+    background: linear-gradient(
+      90deg,
+      #facc15 0%,
+      #c084fc 50%,
+      #34d399 100%
+    );
+
+    box-shadow:
+      0 0 12px rgba(192,132,252,0.45);
+
+    transition:
+      transform 0.4s cubic-bezier(0.4,0,0.2,1),
+      width 0.4s ease;
+  }
+
+
+  /* =========================================================
+     GENERAL TAB CONTENT
+  ========================================================= */
+
+  .tab-section {
+    padding: 0.5rem 0;
+  }
+
+
+  .section-eyebrow {
+    margin-bottom: 0.4rem;
+
+    font-size: 0.65rem;
+    font-weight: 900;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+  }
+
+
+  .marketplace-eyebrow {
+    color: #facc15;
+  }
+
+
+  .ecommerce-eyebrow {
+    color: #34d399;
+  }
+
+
+  .section-title {
+    margin: 0;
+
+    font-size: clamp(1.5rem, 3vw, 2rem);
+    font-weight: 900;
+    letter-spacing: -0.025em;
+    text-transform: uppercase;
+  }
+
+
+  .marketplace-title {
+    color: #facc15;
+  }
+
+
+  .ecommerce-title {
+    color: #34d399;
+  }
+
+
+  .section-description {
+    margin-top: 0.5rem;
+
+    max-width: 680px;
+
+    color: #94a3b8;
+
+    font-size: 0.8rem;
+    line-height: 1.6;
+  }
+
+
+  /* =========================================================
+     CATALOGUE
+  ========================================================= */
+
+  .catalogue-container {
+    width: 100%;
+  }
+
+
+  /* =========================================================
+     CATALOGUE HEADER
+  ========================================================= */
+
+  .catalogue-header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1.5rem;
+
+    margin-bottom: 1.75rem;
+  }
+
+
+  .catalogue-heading {
+    min-width: 0;
+  }
+
+
+  .catalogue-eyebrow {
+    margin-bottom: 0.35rem;
+
+    color: #c084fc;
+
+    font-size: 0.62rem;
+    font-weight: 900;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+  }
+
+
+  .catalogue-title {
+    margin: 0;
+
+    color: #ffffff;
+
+    font-size: clamp(1.5rem, 3vw, 2rem);
+    font-weight: 950;
+    line-height: 1.15;
+
+    letter-spacing: -0.035em;
+    text-transform: uppercase;
+  }
+
+
+  .catalogue-description {
+    margin-top: 0.45rem;
+
+    color: #64748b;
+
+    font-size: 0.75rem;
+    line-height: 1.6;
+  }
+
+
+  /* =========================================================
+     REFRESH BUTTON
+  ========================================================= */
+
+  .catalogue-refresh {
+    flex-shrink: 0;
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+
+    min-height: 38px;
+    padding: 0.65rem 0.9rem;
+
+    border: 1px solid rgba(192,132,252,0.25);
+    border-radius: 0.7rem;
+
+    background: rgba(168,85,247,0.08);
+
+    color: #d8b4fe;
+
+    font-size: 0.68rem;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+
+    cursor: pointer;
+
+    transition:
+      background 0.25s ease,
+      border-color 0.25s ease,
+      color 0.25s ease,
+      transform 0.25s ease;
+  }
+
+
+  .catalogue-refresh:hover {
+    background: rgba(168,85,247,0.16);
+    border-color: rgba(192,132,252,0.5);
+    color: #ffffff;
+
+    transform: translateY(-1px);
+  }
+
+
+  .refresh-icon {
+    font-size: 1rem;
+    line-height: 1;
+
+    transition: transform 0.5s ease;
+  }
+
+
+  .catalogue-refresh:hover .refresh-icon {
+    transform: rotate(180deg);
+  }
+
+
+  /* =========================================================
+     LOADING
+  ========================================================= */
+
+  .catalogue-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+
+    min-height: 220px;
+
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 1rem;
+
+    background: rgba(255,255,255,0.015);
+
+    color: #64748b;
+
+    font-size: 0.75rem;
+  }
+
+
+  .catalogue-spinner {
+    width: 30px;
+    height: 30px;
+
+    margin-bottom: 0.8rem;
+
+    border: 2px solid rgba(192,132,252,0.15);
+    border-top-color: #c084fc;
+
+    border-radius: 50%;
+
+    animation: catalogue-spin 0.8s linear infinite;
+  }
+
+
+  @keyframes catalogue-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+
+  /* =========================================================
+     EMPTY STATE
+  ========================================================= */
+
+  .catalogue-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+
+    min-height: 280px;
+    padding: 2rem;
+
+    border: 1px dashed rgba(192,132,252,0.2);
+    border-radius: 1.25rem;
+
+    background:
+      radial-gradient(
+        circle at center,
+        rgba(168,85,247,0.06),
+        transparent 65%
+      );
+
+    text-align: center;
+  }
+
+
+  .empty-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    width: 64px;
+    height: 64px;
+
+    margin-bottom: 1rem;
+
+    border: 1px solid rgba(192,132,252,0.2);
+    border-radius: 1rem;
+
+    background: rgba(168,85,247,0.08);
+
+    font-size: 1.8rem;
+
+    box-shadow:
+      0 0 30px rgba(168,85,247,0.08);
+  }
+
+
+  .catalogue-empty h3 {
+    margin: 0;
+
+    color: #ffffff;
+
+    font-size: 1rem;
+    font-weight: 800;
+  }
+
+
+  .catalogue-empty p {
+    margin-top: 0.4rem;
+
+    max-width: 360px;
+
+    color: #64748b;
+
+    font-size: 0.72rem;
+    line-height: 1.6;
+  }
+
+
+  /* =========================================================
+     IP GRID
+  ========================================================= */
+
+  .ip-catalogue-grid {
+    display: grid;
+
+    grid-template-columns: repeat(
+      2,
+      minmax(0, 1fr)
+    );
+
+    gap: 1rem;
+  }
+
+
+  /* =========================================================
+     MOBILE
+  ========================================================= */
+
+  @media (max-width: 700px) {
+
+    .influensa-tab {
+      min-height: 58px;
+
+      padding: 0.75rem 0.4rem;
+
+      font-size: 0.62rem;
+      letter-spacing: 0.045em;
+    }
+
+
+    .tab-icon {
+      width: 22px;
+      height: 22px;
+
+      font-size: 0.9rem;
+    }
+
+
+    .catalogue-header {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
+
+    .catalogue-refresh {
+      width: 100%;
+    }
+
+
+    .ip-catalogue-grid {
+      grid-template-columns: 1fr;
+    }
+
+  }
+
+
+  /* =========================================================
+     VERY SMALL SCREENS
+  ========================================================= */
+
+  @media (max-width: 430px) {
+
+    .influensa-tab {
+      flex-direction: column;
+      gap: 0.25rem;
+
+      min-height: 66px;
+
+      font-size: 0.56rem;
+    }
+
+
+    .tab-label {
+      white-space: nowrap;
+    }
+
+  }
+
+</style>
+
 
 <!-- ECOMMERCE SECTION (hidden by default) -->
 <section id="ecomSection" class="hidden lg:col-span-12">
@@ -2694,75 +3333,150 @@ async function loadIPCatalogue() {
 
 
 /* =========================================================
-   TAB SWITCHING — 3 TABS
+   iNFLUENSA — TAB SWITCHING
+   3 TABS
    ========================================================= */
 
 function switchTab(index) {
 
-    const ecomSection = document.getElementById('ecomSection');
-    const catalogueContent = document.getElementById('catalogue-content');
+    // ---------------------------------------------------------
+    // TAB ELEMENTS
+    // ---------------------------------------------------------
 
-    const tabIP = document.getElementById('tab-ip');
-    const tabEcom = document.getElementById('tab-ecom');
-    const tabCatalogue = document.getElementById('tab-catalogue');
+    const tabs = [
+        document.getElementById('tab-ip'),
+        document.getElementById('tab-ecom'),
+        document.getElementById('tab-catalogue')
+    ];
 
-    const indicator = document.getElementById('tab-indicator');
+    // ---------------------------------------------------------
+    // TAB CONTENT
+    // ---------------------------------------------------------
 
-    // Hide E-Commerce and Catalogue first
-    if (ecomSection) {
-        ecomSection.classList.add('hidden');
+    const contents = [
+        document.getElementById('tab-content-0'),
+        document.getElementById('tab-content-1'),
+        document.getElementById('tab-content-2')
+    ];
+
+    // ---------------------------------------------------------
+    // INDICATOR
+    // ---------------------------------------------------------
+
+    const indicator =
+        document.getElementById('tab-indicator');
+
+
+    // ---------------------------------------------------------
+    // SAFETY CHECK
+    // ---------------------------------------------------------
+
+    if (
+        index < 0 ||
+        index > 2 ||
+        !tabs[index] ||
+        !contents[index]
+    ) {
+
+        console.error(
+            'iNFLUENSA: Invalid tab index:',
+            index
+        );
+
+        return;
     }
 
-    if (catalogueContent) {
-        catalogueContent.classList.add('hidden');
-    }
 
-    // Remove active state from all tabs
-    [tabIP, tabEcom, tabCatalogue].forEach(tab => {
-        if (tab) {
-            tab.classList.remove('tab-active');
-        }
+    // ---------------------------------------------------------
+    // RESET ALL TABS
+    // ---------------------------------------------------------
+
+    tabs.forEach((tab, i) => {
+
+        if (!tab) return;
+
+        const isActive = i === index;
+
+        tab.classList.toggle(
+            'tab-active',
+            isActive
+        );
+
+        tab.setAttribute(
+            'aria-selected',
+            isActive ? 'true' : 'false'
+        );
+
+        tab.setAttribute(
+            'tabindex',
+            isActive ? '0' : '-1'
+        );
+
     });
 
-    // E-Commerce
-    if (index === 1) {
-        if (ecomSection) {
-            ecomSection.classList.remove('hidden');
-        }
 
-        if (tabEcom) {
-            tabEcom.classList.add('tab-active');
-        }
-    }
+    // ---------------------------------------------------------
+    // HIDE ALL CONTENT
+    // ---------------------------------------------------------
 
-    // IP Catalogue
-    if (index === 2) {
-        if (catalogueContent) {
-            catalogueContent.classList.remove('hidden');
-        }
+    contents.forEach(content => {
 
-        if (tabCatalogue) {
-            tabCatalogue.classList.add('tab-active');
-        }
+        if (!content) return;
 
-        if (typeof loadIPCatalogue === 'function') {
-            loadIPCatalogue();
-        }
-    }
+        content.classList.add('hidden');
 
-    // IP Marketplace
-    if (index === 0) {
-        if (tabIP) {
-            tabIP.classList.add('tab-active');
-        }
-    }
+    });
 
-    // Sliding indicator
+
+    // ---------------------------------------------------------
+    // SHOW SELECTED CONTENT
+    // ---------------------------------------------------------
+
+    contents[index].classList.remove('hidden');
+
+
+    // ---------------------------------------------------------
+    // MOVE SLIDING INDICATOR
+    // ---------------------------------------------------------
+
     if (indicator) {
-        indicator.style.width = '33.3333%';
-        indicator.style.left = `${index * 33.3333}%`;
+
+        indicator.style.width = '33.333333%';
+
+        indicator.style.left =
+            `${index * 33.333333}%`;
+
     }
+
+
+    // ---------------------------------------------------------
+    // LOAD IP CATALOGUE
+    // ---------------------------------------------------------
+
+    if (
+        index === 2 &&
+        typeof loadIPCatalogue === 'function'
+    ) {
+
+        loadIPCatalogue();
+
+    }
+
 }
+
+
+/* =========================================================
+   INITIAL TAB
+   ========================================================= */
+
+document.addEventListener(
+    'DOMContentLoaded',
+    function () {
+
+        switchTab(0);
+
+    }
+);
 async function viewRegisteredIP(ip) {
 
     try {
