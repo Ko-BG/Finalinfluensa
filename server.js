@@ -11092,7 +11092,7 @@ setInterval(async () => {
 // =========================================================================
 // ENDPOINT 1: POST AN AD (SELLER LOCKS TOKENS INTO ESCROW DEPOSIT POOL)
 // =========================================================================
-// =========================================================================
+
 app.post('/api/orders/create', async (req, res) => {
     try {
         const {
@@ -11278,7 +11278,6 @@ app.post('/api/orders/mark-paid', async (req, res) => {
     }
 });
 
-
 // =========================================================================
 // ENDPOINT 4: SELLER RELEASES ESCROW (VERIFIES FIAT IN HAND, CALCULATES PAYOUT)
 // =========================================================================
@@ -11330,8 +11329,6 @@ await buyer.save();
     }
 });
 
-
-
 // =========================================================================
 // ENDPOINT 5: FETCH MARKETPLACE BOARD (DYNAMIC REAL-TIME FX INDEX ESTIMATES)
 // =========================================================================
@@ -11345,7 +11342,6 @@ app.get('/api/orders/open', async (req, res) => {
         return res.status(500).json({ success: false, message: err.message });
     }
 });
-
 
 
 // =========================================================================
@@ -11508,7 +11504,6 @@ app.post('/api/g/transfer', async (req, res) => {
         await session.endSession();
     }
 });
-// === MERCHANT DASHBOARD BACKEND ===
 // =========================================================================
 // ENDPOINT: G MERCHANT REDEMPTION HISTORY
 // =========================================================================
