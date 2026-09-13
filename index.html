@@ -324,6 +324,7 @@
       role="tab"
       aria-selected="true"
       aria-controls="tab-content-0"
+      tabindex="0"
       onclick="switchTab(0)"
     >
       <span class="tab-icon">🌐</span>
@@ -339,6 +340,7 @@
       role="tab"
       aria-selected="false"
       aria-controls="tab-content-1"
+      tabindex="-1"
       onclick="switchTab(1)"
     >
       <span class="tab-icon">🛍️</span>
@@ -354,6 +356,7 @@
       role="tab"
       aria-selected="false"
       aria-controls="tab-content-2"
+      tabindex="-1"
       onclick="switchTab(2)"
     >
       <span class="tab-icon">📚</span>
@@ -376,6 +379,7 @@
 <!-- =========================================================
      TAB CONTENT
 ========================================================= -->
+
 
 <!-- =========================================================
      TAB 0 — IP MARKETPLACE
@@ -418,6 +422,7 @@
   class="tab-content hidden"
   role="tabpanel"
   aria-labelledby="tab-ecom"
+  aria-hidden="true"
 >
 
   <div class="tab-section">
@@ -451,6 +456,7 @@
   class="tab-content hidden"
   role="tabpanel"
   aria-labelledby="tab-catalogue"
+  aria-hidden="true"
 >
 
   <div class="catalogue-container">
@@ -493,25 +499,6 @@
 
 
     <!-- =====================================================
-         LOADING STATE
-    ====================================================== -->
-
-    <div
-      id="catalogue-loading"
-      class="catalogue-state hidden"
-      aria-live="polite"
-    >
-
-      <div class="catalogue-spinner"></div>
-
-      <p>
-        Loading your registered IP...
-      </p>
-
-    </div>
-
-
-    <!-- =====================================================
          EMPTY STATE
     ====================================================== -->
 
@@ -547,8 +534,6 @@
   </div>
 
 </section>
-
-
 <!-- =========================================================
      iNFLUENSA TAB CSS
 ========================================================= -->
@@ -3337,6 +3322,11 @@ async function loadIPCatalogue() {
    3 TABS
    ========================================================= */
 
+/* =========================================================
+   iNFLUENSA — TAB SWITCHING
+   3 TABS
+   ========================================================= */
+
 function switchTab(index) {
 
     // ---------------------------------------------------------
@@ -3416,7 +3406,7 @@ function switchTab(index) {
 
 
     // ---------------------------------------------------------
-    // HIDE ALL CONTENT
+    // HIDE ALL TAB CONTENT
     // ---------------------------------------------------------
 
     contents.forEach(content => {
@@ -3425,14 +3415,24 @@ function switchTab(index) {
 
         content.classList.add('hidden');
 
+        content.setAttribute(
+            'aria-hidden',
+            'true'
+        );
+
     });
 
 
     // ---------------------------------------------------------
-    // SHOW SELECTED CONTENT
+    // SHOW ONLY SELECTED TAB
     // ---------------------------------------------------------
 
     contents[index].classList.remove('hidden');
+
+    contents[index].setAttribute(
+        'aria-hidden',
+        'false'
+    );
 
 
     // ---------------------------------------------------------
@@ -3441,7 +3441,8 @@ function switchTab(index) {
 
     if (indicator) {
 
-        indicator.style.width = '33.333333%';
+        indicator.style.width =
+            '33.333333%';
 
         indicator.style.left =
             `${index * 33.333333}%`;
