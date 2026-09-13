@@ -2804,12 +2804,41 @@ io.on('connection', (socket) => {
 });
 // ============================================================
 // IP REGISTRATION ACCESS PAYMENT
-// KSh 10 PER REGISTERED IP
-// 100% PLATFORM — NO CREATOR SPLIT
+// STANDARD PRICE: 100 PER REGISTERED IP
+//
+// CREATOR: 92%
+// PLATFORM: 8%
 // ============================================================
 
-const IP_ACCESS_PRICE_KES = 10;
+const IP_ACCESS_PRICE_USD = 10;
 
+const CREATOR_SPLIT_PERCENT = 92;
+const PLATFORM_SPLIT_PERCENT = 8;
+
+
+// ============================================================
+// CALCULATE 92% / 8%
+// ============================================================
+
+function calculateCreatorSplit(amount) {
+
+    const creatorAmount =
+        Number(
+            (amount * (CREATOR_SPLIT_PERCENT / 100))
+                .toFixed(2)
+        );
+
+    const platformFee =
+        Number(
+            (amount * (PLATFORM_SPLIT_PERCENT / 100))
+                .toFixed(2)
+        );
+
+    return {
+        creatorAmount,
+        platformFee
+    };
+}
 
 // ============================================================
 // CHECK WHETHER USER HAS ALREADY PAID FOR THIS IP
@@ -2865,11 +2894,11 @@ async function createPendingIPAccessTransaction({
         // Fixed KSh 10 access charge.
         amountPaid: IP_ACCESS_PRICE_KES,
 
-        // 100% goes to the platform.
+        // 8% goes to the platform.
         platformFee: IP_ACCESS_PRICE_KES,
 
         // No creator split.
-        creatorAmount: 0,
+        creatorAmount: 8,
 
         currency,
 
@@ -7964,109 +7993,6 @@ app.get('/api/ip/registrations/:id/ipcid/download', async (req, res) => {
         return res.status(500).json({
             success: false,
             error: "IP_CID_DOWNLOAD_FAILED",
-            message: error.message
-        });
-    }
-});
-// ============================================================
-// CHECK ACCESS (used by viewRegisteredIP)
-// GET /api/ip/registrations/:id/access
-// ============================================================
-app.get('/api/ip/registrations/:id/access', async (req, res) => {
-    try {
-        const registrationId = req.params.id;
-        const userId = req.user?._id;
-
-        if (!userId) {
-            return res.status(401).json({
-                success: false,
-                error: "AUTHENTICATION_REQUIRED"
-            });
-        }
-
-        if (!registrationId) {
-            return res.status(400).json({
-                success: false,
-                error: "IP_REGISTRATION_ID_REQUIRED"
-            });
-        }
-
-        const user = await User.findById(userId).lean();
-
-        if (!user) {
-            return res.status(401).json({
-                success: false,
-                error: "USER_NOT_FOUND"
-            });
-        }
-
-        const phone = user.identity;
-
-        if (!phone) {
-            return res.status(401).json({
-                success: false,
-                error: "MPESA_PHONE_NOT_FOUND"
-            });
-        }
-
-        const cleanedPhone = cleanPhone(phone);
-
-        if (!cleanedPhone) {
-            return res.status(401).json({
-                success: false,
-                error: "INVALID_MPESA_PHONE"
-            });
-        }
-
-        // Check payment
-        const paid = await hasPaidForIPAccess(registrationId, cleanedPhone);
-
-        if (!paid) {
-            return res.status(402).json({
-                success: false,
-                paid: false,
-                paymentRequired: true,
-                error: "IP_ACCESS_PAYMENT_REQUIRED",
-                amount: 10,
-                currency: "KES"
-            });
-        }
-
-        // Paid → return registration
-        const registration = await IPRegistration.findById(registrationId).lean();
-
-        if (!registration) {
-            return res.status(404).json({
-                success: false,
-                error: "IP_REGISTRATION_NOT_FOUND"
-            });
-        }
-
-        return res.json({
-            success: true,
-            paid: true,
-            registration: {
-                _id: registration._id,
-                ipCid: registration.ipCid,
-                cid: registration.cid,
-                ipType: registration.ipType,
-                title: registration.title,
-                ownerName: registration.ownerName,
-                description: registration.description,
-                registrant: registration.registrant,
-                status: registration.status,
-                contentHash: registration.contentHash,
-                fileCount: registration.fileCount || (registration.files?.length || 0),
-                registeredAt: registration.registeredAt || registration.createdAt
-            }
-        });
-
-    } catch (error) {
-        console.error("❌ IP ACCESS CHECK ERROR:", error);
-
-        return res.status(500).json({
-            success: false,
-            error: "IP_ACCESS_CHECK_FAILED",
             message: error.message
         });
     }
