@@ -1494,6 +1494,7 @@ const calculateLiveTax = async () => {
 };
 
 const processGridSuccess = async (tx) => {
+
     if (tx.status === 'completed') return;
 
     console.log(
@@ -1503,8 +1504,11 @@ const processGridSuccess = async (tx) => {
     // =========================================================================
     // SPECIAL CASE: P2P G PURCHASE
     // =========================================================================
+
     if (tx.type === 'p2p_buy') {
-        const order = await P2POrder.findById(tx.postID);
+
+        const order =
+            await P2POrder.findById(tx.postID);
 
         if (!order) {
             console.error(
@@ -1514,14 +1518,17 @@ const processGridSuccess = async (tx) => {
 
             tx.status = 'completed';
             await tx.save();
+
             return;
         }
 
-        const buyerIdentity = cleanPhone(tx.userPhone);
+        const buyerIdentity =
+            cleanPhone(tx.userPhone);
 
-        const buyer = await User.findOne({
-            identity: buyerIdentity
-        });
+        const buyer =
+            await User.findOne({
+                identity: buyerIdentity
+            });
 
         if (!buyer) {
             console.error(
@@ -1532,7 +1539,8 @@ const processGridSuccess = async (tx) => {
             return;
         }
 
-        const gAmount = Number(order.gAmount);
+        const gAmount =
+            Number(order.gAmount);
 
         if (
             !Number.isFinite(gAmount) ||
@@ -1547,15 +1555,18 @@ const processGridSuccess = async (tx) => {
         }
 
         // =====================================================================
-        // IMPORTANT:
         // G IS ALREADY LOCKED IN ESCROW.
-        // This operation TRANSFERS G to the buyer.
-        // It DOES NOT MINT NEW G.
+        // TRANSFER G TO BUYER.
+        // NO NEW G IS MINTED.
         // =====================================================================
 
-        buyer.gBalance = Number(
-            (buyer.gBalance + gAmount).toFixed(4)
-        );
+        buyer.gBalance =
+            Number(
+                (
+                    Number(buyer.gBalance || 0) +
+                    gAmount
+                ).toFixed(4)
+            );
 
         await buyer.save();
 
@@ -1569,11 +1580,13 @@ const processGridSuccess = async (tx) => {
 
         await User.findOneAndUpdate(
             {
-                identity: order.sellerIdentity
+                identity:
+                    order.sellerIdentity
             },
             {
                 $inc: {
-                    earnings: Number(order.fiatTotal)
+                    earnings:
+                        Number(order.fiatTotal)
                 }
             }
         );
@@ -1583,8 +1596,12 @@ const processGridSuccess = async (tx) => {
         // =====================================================================
 
         order.status = 'COMPLETED';
-        order.paymentConfirmedAt = new Date();
-        order.completedAt = new Date();
+
+        order.paymentConfirmedAt =
+            new Date();
+
+        order.completedAt =
+            new Date();
 
         await order.save();
 
@@ -1593,7 +1610,9 @@ const processGridSuccess = async (tx) => {
         // =====================================================================
 
         tx.status = 'completed';
-        tx.completedAt = new Date();
+
+        tx.completedAt =
+            new Date();
 
         await tx.save();
 
@@ -1604,63 +1623,146 @@ const processGridSuccess = async (tx) => {
         io.to(tx.checkoutID).emit(
             'payment_success',
             {
-                message: "G Purchased & Credited Successfully",
-                txType: 'p2p_buy',
-                currency: 'G',
+                message:
+                    "G Purchased & Credited Successfully",
+
+                txType:
+                    'p2p_buy',
+
+                currency:
+                    'G',
+
                 gAmount,
-                orderId: order._id
+
+                orderId:
+                    order._id
             }
         );
 
         return;
     }
-};
+
 
     // =========================================================================
-    // PRODUCT PURCHASE (NEW - Full, Delivery, Plan)
+    // PRODUCT PURCHASE
+    // Full / Delivery / Plan
     // =========================================================================
-    if (tx.type === 'product_purchase' || tx.type === 'full' || tx.type === 'delivery' || tx.type === 'plan') {
-        const product = await Product.findById(tx.postID);
+
+    if (
+        tx.type === 'product_purchase' ||
+        tx.type === 'full' ||
+        tx.type === 'delivery' ||
+        tx.type === 'plan'
+    ) {
+
+        const product =
+            await Product.findById(tx.postID);
+
         if (!product) {
-            console.error("❌ Product not found for tx:", tx.checkoutID);
+
+            console.error(
+                "❌ Product not found for tx:",
+                tx.checkoutID
+            );
+
             tx.status = 'completed';
+
             await tx.save();
+
             return;
         }
 
-        const buyerPhone = cleanPhone(tx.userPhone);
+        const buyerPhone =
+            cleanPhone(tx.userPhone);
 
-        // Reduce stock
+        // =====================================================================
+        // REDUCE STOCK
+        // =====================================================================
+
         if (product.stock > 0) {
-            product.stock = Math.max(0, product.stock - 1);
+
+            product.stock =
+                Math.max(
+                    0,
+                    product.stock - 1
+                );
+
             await product.save();
         }
 
-        // Credit seller
+        // =====================================================================
+        // CREDIT SELLER
+        // =====================================================================
+
         await User.findOneAndUpdate(
-            { identity: product.seller },
-            { $inc: { earnings: tx.amountPaid } }
+            {
+                identity:
+                    product.seller
+            },
+            {
+                $inc: {
+                    earnings:
+                        tx.amountPaid
+                }
+            }
         );
 
+        // =====================================================================
+        // FINALIZE TRANSACTION
+        // =====================================================================
+
         tx.status = 'completed';
+
+        tx.completedAt =
+            new Date();
+
         await tx.save();
 
-        let message = "Product purchased successfully!";
-        if (tx.type === 'delivery') message = "✅ Order placed! Pay on delivery.";
-        else if (tx.type === 'plan') message = "✅ First installment paid. 3-month plan activated.";
+        // =====================================================================
+        // SUCCESS MESSAGE
+        // =====================================================================
 
-        io.to(tx.checkoutID).emit('payment_success', { 
-            message,
-            productId: product._id,
-            type: tx.type,
-            remainingStock: product.stock
-        });
+        let message =
+            "Product purchased successfully!";
 
-        console.log(`✅ Product purchase completed (${tx.type}) for ${buyerPhone}`);
+        if (tx.type === 'delivery') {
+
+            message =
+                "✅ Order placed! Pay on delivery.";
+
+        }
+        else if (tx.type === 'plan') {
+
+            message =
+                "✅ First installment paid. 3-month plan activated.";
+        }
+
+        // =====================================================================
+        // NOTIFY BUYER
+        // =====================================================================
+
+        io.to(tx.checkoutID).emit(
+            'payment_success',
+            {
+                message,
+
+                productId:
+                    product._id,
+
+                type:
+                    tx.type,
+
+                remainingStock:
+                    product.stock
+            }
+        );
+
+        console.log(
+            `✅ Product purchase completed (${tx.type}) for ${buyerPhone}`
+        );
+
         return;
     }
-
-    
     // =========================================================================
     // REGULAR POST UNLOCK / LICENSE FLOW
     // =========================================================================
