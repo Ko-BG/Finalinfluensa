@@ -6451,13 +6451,42 @@ await payout.save({
         });
 
 
-    } catch (err) {
+        } catch (err) {
 
         console.error(
             "❌ WITHDRAWAL ERROR:",
             err.response?.data ||
             err.message
         );
+
+        if (err.message === "INSUFFICIENT_BALANCE") {
+
+            return res.status(400).json({
+                success: false,
+                error: "INSUFFICIENT_BALANCE"
+            });
+        }
+
+        if (err.message === "USER_NOT_FOUND") {
+
+            return res.status(404).json({
+                success: false,
+                error: "USER_NOT_FOUND"
+            });
+        }
+
+        return res.status(500).json({
+            success: false,
+            error: "WITHDRAWAL_FAILED"
+        });
+
+    } finally {
+
+        await session.endSession();
+
+    }
+
+});
 
 
         // =====================================================
