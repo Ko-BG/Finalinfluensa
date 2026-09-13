@@ -4131,7 +4131,23 @@ async function startPaymentPolling(
 
             console.log(
               "🔓 Media authorization confirmed."
+              
             );
+            // --------------------------------------------------------
+// Load the newly authorized media into the player
+// --------------------------------------------------------
+
+try {
+  await loadSecureMedia(postId, "video");
+  console.log(
+    `🎬 Secure media loaded after payment: ${postId}`
+  );
+} catch (mediaLoadErr) {
+  console.warn(
+    "⚠️ Secure media load failed after payment:",
+    mediaLoadErr
+  );
+}
 
             showToast(
               "🔓 Payment confirmed. Asset unlocked."
