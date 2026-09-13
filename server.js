@@ -6201,7 +6201,7 @@ payout.ledgerReserveReference =
 await payout.save({
     session
 });
-
+            });
 
         // =====================================================
         // IDEMPOTENT DUPLICATE
