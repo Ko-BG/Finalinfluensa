@@ -1,4 +1,4 @@
-const express = require('express');
+=const express = require('express');
 const mongoose = require('mongoose');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -6750,7 +6750,7 @@ currency:
 
         await session.endSession();
     }
-});
+}
 app.post('/api/mpesa/b2c/result', async (req, res) => {
 
     // =========================================================
