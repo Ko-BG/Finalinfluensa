@@ -6750,7 +6750,7 @@ currency:
 
         await session.endSession();
     }
-}
+});
 app.post('/api/mpesa/b2c/result', async (req, res) => {
 
     // =========================================================
