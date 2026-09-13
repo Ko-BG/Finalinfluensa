@@ -36,10 +36,13 @@ const launchProtocol = async () => {
     console.log("------------------------------------------");
 };
 
-const AFRO_HARD_CAP = 51000000000; 
-const PROTOCOL_FEE = 0.08;      
-const MINTING_REWARD_RATE = 0.10; 
-const PLATFORM_RESERVE_SHARE = 0.20; 
+const PROTOCOL_FEE = 0.08;
+const G_MINTING_REWARD_RATE = 0.10;
+
+const G_INITIAL_REFERENCE_USD = 1.00;
+
+const G_ACTIVATION_USERS = 1_000_000;
+const G_ACTIVATION_SUPPLY = 1_000_000;
 
 const neuralSentryLog = new Map();
 const MAX_REQUESTS_PER_WINDOW = 500; 
@@ -298,12 +301,20 @@ router.post('/api/sync/batch', async (req, res) => {
         continue;
       }
 
-      // 2. Atomic Balance Modification (Deduct AfroCoins)
-      const updatedUser = await User.findOneAndUpdate(
-        { identity: item.userId, afroCoins: { $gte: item.payload.amount } },
-        { $inc: { afroCoins: -item.payload.amount } },
-        { new: true, session }
-      );
+      // 2. Atomic Balance Modification (Deduct G)
+const updatedUser = await User.findOneAndUpdate(
+  {
+    identity: item.userId,
+    gBalance: { $gte: item.payload.amount }
+  },
+  {
+    $inc: { gBalance: -item.payload.amount }
+  },
+  {
+    new: true,
+    session
+  }
+);
 
       if (!updatedUser) {
         throw new Error('INSUFFICIENT_FUNDS_OR_USER_NOT_FOUND');
@@ -405,7 +416,12 @@ mongoose.connect(process.env.MONGO_URI)
     .catch(err => console.error('❌ Grid Connection Error:', err));
 
 // --- SCHEMAS ---
+// =========================================================================
+// G WALLET / ECONOMIC LEDGER
+// =========================================================================
+
 const walletLedgerSchema = new mongoose.Schema({
+
     userId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
@@ -416,19 +432,36 @@ const walletLedgerSchema = new mongoose.Schema({
     type: {
         type: String,
         enum: [
+
+            // G economic activity
+            "G_ISSUANCE",
+            "G_TRANSFER",
+            "G_RECEIPT",
+            "G_REDEMPTION",
+
+            // Marketplace activity
             "CONTENT_SALE",
             "PLATFORM_FEE",
+
+            // Fiat withdrawal / settlement
             "WITHDRAWAL_RESERVE",
             "WITHDRAWAL_COMPLETED",
             "WITHDRAWAL_REFUND",
-            "AFRO_CONVERSION"
+
+            // Legacy conversion event
+            "G_CONVERSION"
+
         ],
-        required: true
+        required: true,
+        index: true
     },
 
     direction: {
         type: String,
-        enum: ["CREDIT", "DEBIT"],
+        enum: [
+            "CREDIT",
+            "DEBIT"
+        ],
         required: true
     },
 
@@ -438,9 +471,22 @@ const walletLedgerSchema = new mongoose.Schema({
         min: 0
     },
 
+    // NEVER default this to KES.
+    // Every ledger entry must explicitly identify its unit.
     currency: {
         type: String,
-        default: "KES"
+        enum: [
+            "G",
+            "KES",
+            "USD",
+            "NGN",
+            "TZS",
+            "UGX",
+            "RWF",
+            "GHS"
+        ],
+        required: true,
+        index: true
     },
 
     balanceBefore: {
@@ -467,7 +513,8 @@ const walletLedgerSchema = new mongoose.Schema({
 
     createdAt: {
         type: Date,
-        default: Date.now
+        default: Date.now,
+        index: true
     }
 });
 
@@ -490,6 +537,10 @@ const PayoutSchema = new mongoose.Schema(
             required: true
         },
 
+        // ---------------------------------------------------------
+        // FIAT PAYOUT AMOUNT
+        // ---------------------------------------------------------
+
         amount: {
             type: Number,
             required: true,
@@ -498,32 +549,64 @@ const PayoutSchema = new mongoose.Schema(
 
         currency: {
             type: String,
-            default: "KES"
+            enum: [
+                "KES",
+                "USD",
+                "NGN",
+                "TZS",
+                "UGX",
+                "RWF",
+                "GHS"
+            ],
+            default: "KES",
+            index: true
         },
+
+        // ---------------------------------------------------------
+        // G REDEMPTION
+        // ---------------------------------------------------------
+
+        gConverted: {
+            type: Number,
+            default: 0,
+            min: 0
+        },
+
+        gRate: {
+            type: Number,
+            default: 0,
+            min: 0
+        },
+
+        // Amount of G removed from the user's wallet
+        gAmountRedeemed: {
+            type: Number,
+            default: 0,
+            min: 0
+        },
+
+        // ---------------------------------------------------------
+        // EARNINGS RESERVE
+        // ---------------------------------------------------------
 
         earningsReserved: {
             type: Number,
-            default: 0
+            default: 0,
+            min: 0
         },
 
-        afroConverted: {
-            type: Number,
-            default: 0
-        },
-
-        afroRate: {
-            type: Number,
-            default: 0
-        },
+        // ---------------------------------------------------------
+        // PAYMENT GATEWAY
+        // ---------------------------------------------------------
 
         gateway: {
             type: String,
             default: "mpesa_b2c"
         },
 
-        // ---------------------------------------------
-        // Financial state machine
-        // ---------------------------------------------
+        // ---------------------------------------------------------
+        // FINANCIAL STATE MACHINE
+        // ---------------------------------------------------------
 
         status: {
             type: String,
@@ -540,18 +623,18 @@ const PayoutSchema = new mongoose.Schema(
             index: true
         },
 
-        // ---------------------------------------------
-        // Idempotency
-        // ---------------------------------------------
+        // ---------------------------------------------------------
+        // IDEMPOTENCY
+        // ---------------------------------------------------------
 
         idempotencyKey: {
             type: String,
             required: true
         },
 
-        // ---------------------------------------------
-        // Safaricom identifiers
-        // ---------------------------------------------
+        // ---------------------------------------------------------
+        // SAFARICOM IDENTIFIERS
+        // ---------------------------------------------------------
 
         conversationId: {
             type: String,
@@ -559,7 +642,9 @@ const PayoutSchema = new mongoose.Schema(
             sparse: true
         },
 
-        originatorConversationId: String,
+        originatorConversationId: {
+            type: String
+        },
 
         mpesaTxId: {
             type: String,
@@ -567,19 +652,21 @@ const PayoutSchema = new mongoose.Schema(
             sparse: true
         },
 
-        // ---------------------------------------------
-        // Safaricom responses
-        // ---------------------------------------------
+        // ---------------------------------------------------------
+        // SAFARICOM RESPONSES
+        // ---------------------------------------------------------
 
         responseCode: String,
+
         responseDescription: String,
 
         resultCode: Number,
+
         resultDesc: String,
 
-        // ---------------------------------------------
-        // Lifecycle timestamps
-        // ---------------------------------------------
+        // ---------------------------------------------------------
+        // LIFECYCLE
+        // ---------------------------------------------------------
 
         createdAt: {
             type: Date,
@@ -587,14 +674,18 @@ const PayoutSchema = new mongoose.Schema(
         },
 
         submittingAt: Date,
+
         submittedAt: Date,
+
         completedAt: Date,
+
         failedAt: Date,
+
         refundedAt: Date,
 
-        // ---------------------------------------------
-        // Reconciliation
-        // ---------------------------------------------
+        // ---------------------------------------------------------
+        // RECONCILIATION
+        // ---------------------------------------------------------
 
         reconciliationRequired: {
             type: Boolean,
@@ -603,6 +694,7 @@ const PayoutSchema = new mongoose.Schema(
         },
 
         lastReconciliationAt: Date,
+
         reconciliationAttempts: {
             type: Number,
             default: 0
@@ -610,19 +702,21 @@ const PayoutSchema = new mongoose.Schema(
 
         lastGatewayError: String,
 
-        // ---------------------------------------------
-        // Ledger references
-        // ---------------------------------------------
+        // ---------------------------------------------------------
+        // LEDGER REFERENCES
+        // ---------------------------------------------------------
 
         ledgerReserveReference: String,
+
         ledgerCompletionReference: String,
+
         ledgerRefundReference: String,
 
         refundReason: String,
 
-        // ---------------------------------------------
-        // Submission attempts
-        // ---------------------------------------------
+        // ---------------------------------------------------------
+        // SUBMISSION ATTEMPTS
+        // ---------------------------------------------------------
 
         submissionAttempts: {
             type: Number,
@@ -636,7 +730,7 @@ const PayoutSchema = new mongoose.Schema(
 
 
 // =============================================================
-// CRITICAL: DATABASE-LEVEL IDEMPOTENCY
+// DATABASE-LEVEL IDEMPOTENCY
 // =============================================================
 
 PayoutSchema.index(
@@ -659,6 +753,7 @@ PayoutSchema.index({
     reconciliationRequired: 1,
     lastReconciliationAt: 1
 });
+
 
 const postSchema = new mongoose.Schema({
     title: String, 
@@ -790,102 +885,404 @@ const IPRegistrationSchema = new mongoose.Schema({
 
 const IPRegistration = mongoose.model("IPRegistration", IPRegistrationSchema);
 
-const userSchema = new mongoose.Schema({ 
-    identity: { type: String, unique: true, index: true }, 
-    afroCoins: { type: Number, default: 0 },
-    earnings: { type: Number, default: 0 },
-    lastSeen: { type: Number, default: Date.now },
-    
-    // Stripe Integration
-    stripeCustomerId: { type: String, index: true },           // For buyer payments
-    stripeAccountId: { type: String, index: true },            // For Connect payouts (creators)
-    stripeOnboardingComplete: { type: Boolean, default: false },
-    
-    // NEW: External redeem history for merchants/stores
-    redemptionHistory: [{
-        code: String,
-        amount: Number,
-        merchantId: String,
-        redeemedAt: Date
-    }]
-});
+const userSchema = new mongoose.Schema({
 
-// Move compound index HERE (must be defined BEFORE creating the model)
-userSchema.index({ identity: 1, stripeAccountId: 1 });
+    // =============================================================
+    // USER IDENTITY
+    // =============================================================
 
-// ✅ FIX: Pass userSchema as a variable (no single quotes)
-const User = mongoose.model('User', userSchema);
-
-
-
-const vaultSchema = new mongoose.Schema({ 
-    id: { type: String, default: 'protocol_vault' }, 
-    balance: { type: Number, default: 0 }, 
-    totalAfroMinted: { type: Number, default: 0 },
-    platformAfroReserve: { type: Number, default: 0 } 
-});
-const Vault = mongoose.model('Vault', vaultSchema);
-
-const P2POrderSchema = new mongoose.Schema({
-    // Hex or cryptographic identity string string identifying the seller node
-    sellerIdentity: { 
-        type: String, 
-        required: true, 
-        index: true,
-        trim: true 
-    },
-    // Remains null until a peer clicks "Buy" and locks the offer
-    buyerIdentity: { 
-        type: String, 
-        default: null, 
-        index: true,
-        trim: true 
-    },
-    // Amount of AFRO locked inside the escrow pool
-    afroAmount: { 
-        type: Number, 
-        required: true, 
-        min: [0.01, 'Minimum trade asset value is 0.01 AFRO'] 
-    },
-    // Conversion exchange price point (e.g., 15.50 KES per 1 AFRO)
-    fiatRatePerCoin: { 
-        type: Number, 
-        required: true, 
-        min: [0.01, 'Rate per coin must be greater than zero'] 
-    },
-    // Automated calculation: afroAmount * fiatRatePerCoin
-    fiatTotal: { 
-        type: Number, 
-        required: true 
-    },
-    // Out-of-band payment destination details (e.g., "M-PESA Till: 443321")
-    paymentMethodDetails: { 
-        type: String, 
-        required: true,
-        trim: true 
-    },
-    // Structural state-machine tracking indicators
-    status: { 
-        type: String, 
-        enum: ['OPEN', 'PENDING_PAYMENT', 'PAID', 'COMPLETED', 'DISPUTED', 'CANCELLED'], 
-        default: 'OPEN',
+    identity: {
+        type: String,
+        unique: true,
         index: true
     },
-    paymentConfirmedAt: { 
-        type: Date 
+
+    // =============================================================
+    // G WALLET
+    // =============================================================
+
+    gBalance: {
+        type: Number,
+        default: 0,
+        min: 0
     },
-    // Automatically releases locked assets if payment window passes
-    expiresAt: { 
-        type: Date 
-    }
-}, { 
-    timestamps: true // Automatically generates createdAt and updatedAt fields
+
+    // =============================================================
+    // FIAT / CREATOR EARNINGS
+    // =============================================================
+
+    earnings: {
+        type: Number,
+        default: 0,
+        min: 0
+    },
+
+    // =============================================================
+    // ACTIVITY
+    // =============================================================
+
+    lastSeen: {
+        type: Number,
+        default: Date.now
+    },
+
+    // =============================================================
+    // STRIPE INTEGRATION
+    // =============================================================
+
+    stripeCustomerId: {
+        type: String,
+        index: true
+    },
+
+    stripeAccountId: {
+        type: String,
+        index: true
+    },
+
+    stripeOnboardingComplete: {
+        type: Boolean,
+        default: false
+    },
+
+    // =============================================================
+    // EXTERNAL REDEMPTION HISTORY
+    // =============================================================
+
+    redemptionHistory: [{
+        code: {
+            type: String
+        },
+
+        amount: {
+            type: Number
+        },
+
+        currency: {
+            type: String
+        },
+
+        merchantId: {
+            type: String
+        },
+
+        redeemedAt: {
+            type: Date
+        }
+    }]
+
+}, {
+    timestamps: true
 });
 
-// Compound index optimized for rendering active open orders quickly to other buyers
-P2POrderSchema.index({ status: 1, createdAt: -1 });
 
-const P2POrder = mongoose.model('P2POrder', P2POrderSchema);
+// =============================================================
+// USER INDEXES
+// =============================================================
+
+userSchema.index({
+    identity: 1,
+    stripeAccountId: 1
+});
+
+
+// =============================================================
+// MODEL
+// =============================================================
+
+const User = mongoose.model("User", userSchema);
+
+
+const vaultSchema = new mongoose.Schema(
+    {
+        // =========================================================
+        // SINGLE PROTOCOL VAULT
+        // =========================================================
+
+        id: {
+            type: String,
+            default: "protocol_vault",
+            unique: true,
+            index: true
+        },
+
+        // =========================================================
+        // FIAT / RESERVE BALANCE
+        // =========================================================
+
+        balance: {
+            type: Number,
+            default: 0,
+            min: 0
+        },
+
+        balanceCurrency: {
+            type: String,
+            enum: [
+                "KES",
+                "USD",
+                "NGN",
+                "TZS",
+                "UGX",
+                "RWF",
+                "GHS"
+            ],
+            default: "KES"
+        },
+
+        // =========================================================
+        // G SUPPLY ACCOUNTING
+        // =========================================================
+
+        totalGMinted: {
+            type: Number,
+            default: 0,
+            min: 0
+        },
+
+        totalGBurned: {
+            type: Number,
+            default: 0,
+            min: 0
+        },
+
+        circulatingG: {
+            type: Number,
+            default: 0,
+            min: 0
+        },
+
+        // =========================================================
+        // PLATFORM G RESERVE
+        // =========================================================
+
+        platformGReserve: {
+            type: Number,
+            default: 0,
+            min: 0
+        },
+
+        // =========================================================
+        // ECONOMIC ACTIVITY
+        // =========================================================
+
+        totalQualifyingTransactionValue: {
+            type: Number,
+            default: 0,
+            min: 0
+        },
+
+        totalIssuanceAllocated: {
+            type: Number,
+            default: 0,
+            min: 0
+        },
+
+        // =========================================================
+        // AUDIT
+        // =========================================================
+
+        lastUpdatedAt: {
+            type: Date,
+            default: Date.now
+        }
+    },
+    {
+        timestamps: true
+    }
+);
+
+const Vault = mongoose.model("Vault", vaultSchema);
+
+const P2POrderSchema = new mongoose.Schema({
+
+    // =============================================================
+    // SELLER / BUYER
+    // =============================================================
+
+    sellerIdentity: {
+        type: String,
+        required: true,
+        index: true,
+        trim: true
+    },
+
+    buyerIdentity: {
+        type: String,
+        default: null,
+        index: true,
+        trim: true
+    },
+
+    // =============================================================
+    // G ESCROW
+    // =============================================================
+
+    // Amount of G locked in escrow
+    gAmount: {
+        type: Number,
+        required: true,
+        min: [
+            0.0001,
+            "Minimum trade asset value is 0.0001 G"
+        ]
+    },
+
+    // =============================================================
+    // FIAT EXCHANGE RATE
+    // =============================================================
+
+    // Example:
+    // 150 KES per 1 G
+    fiatRatePerG: {
+        type: Number,
+        required: true,
+        min: [
+            0.01,
+            "Rate per G must be greater than zero"
+        ]
+    },
+
+    // Total fiat value of the order
+    fiatTotal: {
+        type: Number,
+        required: true,
+        min: 0
+    },
+
+    fiatCurrency: {
+        type: String,
+        enum: [
+            "KES",
+            "USD",
+            "NGN",
+            "TZS",
+            "UGX",
+            "RWF",
+            "GHS"
+        ],
+        default: "KES",
+        index: true
+    },
+
+    // =============================================================
+    // PAYMENT DESTINATION
+    // =============================================================
+
+    paymentMethodDetails: {
+        type: String,
+        required: true,
+        trim: true
+    },
+
+    // =============================================================
+    // ESCROW STATE MACHINE
+    // =============================================================
+
+    status: {
+        type: String,
+        enum: [
+            "OPEN",
+            "PENDING_PAYMENT",
+            "PAID",
+            "COMPLETED",
+            "DISPUTED",
+            "CANCELLED"
+        ],
+        default: "OPEN",
+        index: true
+    },
+
+    // =============================================================
+    // PAYMENT CONFIRMATION
+    // =============================================================
+
+    paymentConfirmedAt: {
+        type: Date
+    },
+
+    // =============================================================
+    // ESCROW LIFECYCLE
+    // =============================================================
+
+    expiresAt: {
+        type: Date,
+        index: true
+    },
+
+    // =============================================================
+    // LEDGER REFERENCES
+    // =============================================================
+
+    escrowDebitReference: {
+        type: String,
+        unique: true,
+        sparse: true
+    },
+
+    escrowReleaseReference: {
+        type: String,
+        unique: true,
+        sparse: true
+    },
+
+    escrowRefundReference: {
+        type: String,
+        unique: true,
+        sparse: true
+    },
+
+    // =============================================================
+    // AUDIT
+    // =============================================================
+
+    cancelledAt: Date,
+
+    completedAt: Date,
+
+    disputedAt: Date
+
+}, {
+    timestamps: true
+});
+
+
+// =============================================================
+// ACTIVE ORDER INDEX
+// =============================================================
+
+P2POrderSchema.index({
+    status: 1,
+    createdAt: -1
+});
+
+
+// =============================================================
+// SELLER OPEN ORDERS
+// =============================================================
+
+P2POrderSchema.index({
+    sellerIdentity: 1,
+    status: 1,
+    createdAt: -1
+});
+
+
+// =============================================================
+// BUYER ACTIVE ORDERS
+// =============================================================
+
+P2POrderSchema.index({
+    buyerIdentity: 1,
+    status: 1,
+    createdAt: -1
+});
+
+
+const P2POrder = mongoose.model(
+    "P2POrder",
+    P2POrderSchema
+);
 
 const transactionSchema = new mongoose.Schema({
     checkoutID: {
@@ -1097,52 +1494,127 @@ const calculateLiveTax = async () => {
 };
 
 const processGridSuccess = async (tx) => {
-    if (tx.status === 'completed') return; 
+    if (tx.status === 'completed') return;
 
-    console.log(`🔄 Processing success for tx: ${tx.checkoutID} | Type: ${tx.type} | Amount: ${tx.amountPaid}`);
+    console.log(
+        `🔄 Processing success for tx: ${tx.checkoutID} | Type: ${tx.type} | Amount: ${tx.amountPaid}`
+    );
 
     // =========================================================================
-    // SPECIAL CASE: P2P AFRO PURCHASE
+    // SPECIAL CASE: P2P G PURCHASE
     // =========================================================================
     if (tx.type === 'p2p_buy') {
         const order = await P2POrder.findById(tx.postID);
+
         if (!order) {
-            console.error("P2P order not found for tx:", tx.checkoutID);
+            console.error(
+                "P2P order not found for tx:",
+                tx.checkoutID
+            );
+
             tx.status = 'completed';
             await tx.save();
             return;
         }
 
         const buyerIdentity = cleanPhone(tx.userPhone);
-        const buyer = await User.findOne({ identity: buyerIdentity });
 
-        if (buyer) {
-            buyer.afroCoins = Number((buyer.afroCoins + order.afroAmount).toFixed(4));
-            await buyer.save();
-            console.log(`✅ P2P SUCCESS: +${order.afroAmount} AFRO to ${buyerIdentity}`);
+        const buyer = await User.findOne({
+            identity: buyerIdentity
+        });
+
+        if (!buyer) {
+            console.error(
+                "P2P buyer not found:",
+                buyerIdentity
+            );
+
+            return;
         }
 
-        // Credit seller earnings automatically
-        await User.findOneAndUpdate(
-            { identity: order.sellerIdentity },
-            { $inc: { earnings: order.fiatTotal } }
+        const gAmount = Number(order.gAmount);
+
+        if (
+            !Number.isFinite(gAmount) ||
+            gAmount <= 0
+        ) {
+            console.error(
+                "Invalid G amount on P2P order:",
+                order._id
+            );
+
+            return;
+        }
+
+        // =====================================================================
+        // IMPORTANT:
+        // G IS ALREADY LOCKED IN ESCROW.
+        // This operation TRANSFERS G to the buyer.
+        // It DOES NOT MINT NEW G.
+        // =====================================================================
+
+        buyer.gBalance = Number(
+            (buyer.gBalance + gAmount).toFixed(4)
         );
 
-        // Finalize
+        await buyer.save();
+
+        console.log(
+            `✅ P2P SUCCESS: +${gAmount} G to ${buyerIdentity}`
+        );
+
+        // =====================================================================
+        // CREDIT SELLER'S FIAT EARNINGS
+        // =====================================================================
+
+        await User.findOneAndUpdate(
+            {
+                identity: order.sellerIdentity
+            },
+            {
+                $inc: {
+                    earnings: Number(order.fiatTotal)
+                }
+            }
+        );
+
+        // =====================================================================
+        // FINALIZE ORDER
+        // =====================================================================
+
         order.status = 'COMPLETED';
         order.paymentConfirmedAt = new Date();
+        order.completedAt = new Date();
+
         await order.save();
 
+        // =====================================================================
+        // FINALIZE TRANSACTION
+        // =====================================================================
+
         tx.status = 'completed';
+        tx.completedAt = new Date();
+
         await tx.save();
 
-        io.to(tx.checkoutID).emit('payment_success', { 
-            message: "AFRO Purchased & Credited Successfully",
-            txType: 'p2p_buy',
-            orderId: order._id
-        });
+        // =====================================================================
+        // NOTIFY BUYER
+        // =====================================================================
+
+        io.to(tx.checkoutID).emit(
+            'payment_success',
+            {
+                message: "G Purchased & Credited Successfully",
+                txType: 'p2p_buy',
+                currency: 'G',
+                gAmount,
+                orderId: order._id
+            }
+        );
+
         return;
     }
+};
 
     // =========================================================================
     // PRODUCT PURCHASE (NEW - Full, Delivery, Plan)
@@ -1235,16 +1707,56 @@ const processGridSuccess = async (tx) => {
         status: 'completed' 
     });
 
-    // Mint AFRO reward for buyer
-    const mintResults = await governAfroMinting(tx.amountPaid);
-    const reward = mintResults.user;
+    // =========================================================================
+// MINT G REWARD FOR BUYER
+// =========================================================================
 
-    await Vault.findOneAndUpdate({ id: 'protocol_vault' }, { $inc: { balance: platformFee } }, { upsert: true });
-    await User.findOneAndUpdate(
-        { identity: cleanPhone(tx.userPhone) }, 
-        { $inc: { afroCoins: reward }, lastSeen: Date.now() }, 
-        { upsert: true }
-    );
+const mintResults = await governGMinting(tx.amountPaid);
+const gReward = Number(mintResults.user || 0);
+
+if (!Number.isFinite(gReward) || gReward <= 0) {
+    throw new Error("INVALID_G_REWARD");
+}
+
+// =========================================================================
+// UPDATE PROTOCOL VAULT
+// =========================================================================
+
+await Vault.findOneAndUpdate(
+    { id: 'protocol_vault' },
+    {
+        $inc: {
+            balance: Number(platformFee || 0),
+            totalGMinted: gReward,
+            circulatingG: gReward
+        },
+        $set: {
+            lastUpdatedAt: new Date()
+        }
+    },
+    {
+        upsert: true
+    }
+);
+
+// =========================================================================
+// CREDIT G TO USER
+// =========================================================================
+
+await User.findOneAndUpdate(
+    { identity: cleanPhone(tx.userPhone) },
+    {
+        $inc: {
+            gBalance: gReward
+        },
+        $set: {
+            lastSeen: Date.now()
+        }
+    },
+    {
+        upsert: true
+    }
+);
 
     // STEP 3: SPLIT & ROYALTY DISTRIBUTION
     if (tx.type === 'handshake_fee') {
@@ -1385,15 +1897,14 @@ app.post('/api/payouts/create-onboarding-link', async (req, res) => {
 });
 
 
-const governAfroMinting = async ({
+const governGMinting = async ({
     requestedAmount,
     buyer,
     creator,
     session
 }) => {
 
-    const amount =
-        Number(requestedAmount);
+    const amount = Number(requestedAmount);
 
     if (
         !Number.isFinite(amount) ||
@@ -1402,43 +1913,58 @@ const governAfroMinting = async ({
         throw new Error("INVALID_MINT_AMOUNT");
     }
 
-    const rewardPerUser =
-        Number(
-            (amount * MINTING_REWARD_RATE).toFixed(2)
-        );
+    // =====================================================
+    // TOTAL G ISSUANCE
+    // 10% OF THE QUALIFYING TRANSACTION
+    // =====================================================
 
-    // Buyer + creator
-    const totalNewMint =
-        Number(
-            (rewardPerUser * 2).toFixed(2)
-        );
-
-    const vault =
-        await Vault.findOneAndUpdate(
-            { id: "protocol_vault" },
-            {},
-            {
-                upsert: true,
-                new: true,
-                session
-            }
-        );
+    const totalNewMint = Number(
+        (amount * G_MINTING_RATE).toFixed(4)
+    );
 
     if (
-        Number(vault.totalAfroMinted || 0) +
-        totalNewMint >
-        AFRO_HARD_CAP
+        !Number.isFinite(totalNewMint) ||
+        totalNewMint <= 0
     ) {
-        throw new Error("AFRO_HARD_CAP_REACHED");
+        throw new Error("INVALID_G_ISSUANCE");
     }
+
+    // =====================================================
+    // SPLIT TOTAL G ALLOCATION
+    // =====================================================
+
+    const buyerReward = Number(
+        (totalNewMint / 2).toFixed(4)
+    );
+
+    const creatorReward = Number(
+        (totalNewMint - buyerReward).toFixed(4)
+    );
+
+    // =====================================================
+    // GET / CREATE PROTOCOL VAULT
+    // =====================================================
+
+    await Vault.findOneAndUpdate(
+        {
+            id: "protocol_vault"
+        },
+        {},
+        {
+            upsert: true,
+            new: true,
+            session
+        }
+    );
 
     // =====================================================
     // CREDIT BUYER
     // =====================================================
 
-    buyer.afroCoins =
-        Number(buyer.afroCoins || 0) +
-        rewardPerUser;
+    buyer.gBalance = Number(
+        (Number(buyer.gBalance || 0) + buyerReward)
+            .toFixed(4)
+    );
 
     await buyer.save({
         session
@@ -1448,24 +1974,32 @@ const governAfroMinting = async ({
     // CREDIT CREATOR
     // =====================================================
 
-    creator.afroCoins =
-        Number(creator.afroCoins || 0) +
-        rewardPerUser;
+    creator.gBalance = Number(
+        (Number(creator.gBalance || 0) + creatorReward)
+            .toFixed(4)
+    );
 
     await creator.save({
         session
     });
 
     // =====================================================
-    // UPDATE GLOBAL AFRO SUPPLY
+    // UPDATE GLOBAL G SUPPLY
     // =====================================================
 
     await Vault.updateOne(
-        { id: "protocol_vault" },
+        {
+            id: "protocol_vault"
+        },
         {
             $inc: {
-                totalAfroMinted:
-                    totalNewMint
+                totalGMinted: totalNewMint,
+                circulatingG: totalNewMint,
+                totalQualifyingTransactionValue: amount,
+                totalIssuanceAllocated: totalNewMint
+            },
+            $set: {
+                lastUpdatedAt: new Date()
             }
         },
         {
@@ -1473,15 +2007,15 @@ const governAfroMinting = async ({
         }
     );
 
+    // =====================================================
+    // RETURN
+    // =====================================================
+
     return {
-        buyer:
-            rewardPerUser,
-
-        creator:
-            rewardPerUser,
-
-        totalMinted:
-            totalNewMint
+        buyer: buyerReward,
+        creator: creatorReward,
+        totalMinted: totalNewMint,
+        issuanceRate: G_MINTING_RATE
     };
 };
 
@@ -2224,80 +2758,199 @@ app.get('/api/regional-context', async (req, res) => {
 });
 // Generate redeemable code for offline use (stores, markets, Caribbean islands)
 const generateRedemptionCode = () => {
-    const prefix = "AFRO-" + Date.now().toString(36).toUpperCase();
+    const prefix = "G-" + Date.now().toString(36).toUpperCase();
     const suffix = crypto.randomBytes(6).toString('hex').toUpperCase();
     return `${prefix}-${suffix}`;
 };
 
-app.post('/api/afro/redeem', async (req, res) => {
-    const { redemptionCode, merchantIdentity, claimedAmount } = req.body;
+app.post('/api/g/redeem', async (req, res) => {
+    const {
+        redemptionCode,
+        merchantIdentity,
+        claimedAmount
+    } = req.body;
 
-    if (!redemptionCode || !claimedAmount || !merchantIdentity) {
-        return res.status(400).json({ error: "MISSING_FIELDS" });
+    const amount = Number(claimedAmount);
+
+    if (
+        !redemptionCode ||
+        !merchantIdentity ||
+        !Number.isFinite(amount) ||
+        amount <= 0
+    ) {
+        return res.status(400).json({
+            error: "MISSING_OR_INVALID_FIELDS"
+        });
     }
 
     try {
-        const user = await User.findOne({ "redemptionHistory.code": redemptionCode });
+        // Find the user who owns this redemption code
+        const user = await User.findOne({
+            "redemptionHistory.code": redemptionCode
+        });
+
         if (!user) {
-            return res.status(404).json({ error: "INVALID_CODE" });
+            return res.status(404).json({
+                error: "INVALID_CODE"
+            });
         }
 
-        // Find unredeemed entry
-        const entryIndex = user.redemptionHistory.findIndex(h => 
-            h.code === redemptionCode && !h.redeemedAt
-        );
+        // Find the specific unredeemed redemption entry
+        const entryIndex =
+            user.redemptionHistory.findIndex(entry =>
+                entry.code === redemptionCode &&
+                !entry.redeemedAt
+            );
 
         if (entryIndex === -1) {
-            return res.status(400).json({ error: "ALREADY_REDEEMED" });
+            return res.status(400).json({
+                error: "ALREADY_REDEEMED"
+            });
         }
 
-        const entry = user.redemptionHistory[entryIndex];
+        const entry =
+            user.redemptionHistory[entryIndex];
 
-        if (entry.amount < claimedAmount) {
-            return res.status(400).json({ error: "INSUFFICIENT_VALUE" });
+        const redemptionValue =
+            Number(entry.amount || 0);
+
+        if (
+            !Number.isFinite(redemptionValue) ||
+            redemptionValue <= 0
+        ) {
+            return res.status(400).json({
+                error: "INVALID_REDEMPTION_VALUE"
+            });
         }
 
-        // === ATOMIC UPDATE (Recommended) ===
+        if (redemptionValue < amount) {
+            return res.status(400).json({
+                error: "INSUFFICIENT_VALUE"
+            });
+        }
+
+        /*
+         * =====================================================
+         * ATOMIC G REDEMPTION
+         * =====================================================
+         *
+         * The redemption code can only be used once.
+         * At the same time, the user's G balance is reduced.
+         */
         const result = await User.updateOne(
-            { 
-                _id: user._id, 
-                "redemptionHistory.code": redemptionCode,
-                "redemptionHistory.redeemedAt": { $exists: false }
+            {
+                _id: user._id,
+
+                "redemptionHistory": {
+                    $elemMatch: {
+                        code: redemptionCode,
+                        redeemedAt: { $exists: false }
+                    }
+                },
+
+                gBalance: {
+                    $gte: amount
+                }
             },
             {
                 $set: {
-                    "redemptionHistory.$.redeemedAt": new Date(),
-                    "redemptionHistory.$.merchantId": merchantIdentity
+                    "redemptionHistory.$.redeemedAt":
+                        new Date(),
+
+                    "redemptionHistory.$.merchantId":
+                        merchantIdentity,
+
+                    "redemptionHistory.$.currency":
+                        "G"
                 },
-                $inc: { afroCoins: -claimedAmount }
+
+                $inc: {
+                    gBalance: -amount
+                }
             }
         );
 
         if (result.modifiedCount === 0) {
-            return res.status(400).json({ error: "REDEEM_FAILED_OR_ALREADY_PROCESSED" });
+            return res.status(400).json({
+                error:
+                    "REDEEM_FAILED_OR_ALREADY_PROCESSED"
+            });
         }
 
-        // Credit merchant
+        /*
+         * =====================================================
+         * MERCHANT CREDIT
+         * =====================================================
+         *
+         * The merchant receives the redeemed G.
+         *
+         * 5% platform fee
+         * 95% merchant net
+         */
+        const platformFee =
+            Number((amount * 0.05).toFixed(4));
+
+        const merchantNet =
+            Number((amount - platformFee).toFixed(4));
+
         await Payout.create({
             parentTxID: redemptionCode,
+
             recipientNode: merchantIdentity,
-            grossAmount: claimedAmount,
-            creatorNet: Math.round(claimedAmount * 0.95 * 100) / 100,
-            platformFee: Math.round(claimedAmount * 0.05 * 100) / 100,
-            status: 'completed',
-            mpesaB2CReceipt: `AFRO-REDEEM-${Date.now()}`
+
+            grossAmount: amount,
+
+            creatorNet: merchantNet,
+
+            platformFee: platformFee,
+
+            currency: "G",
+
+            status: "completed",
+
+            mpesaB2CReceipt:
+                `G-REDEEM-${Date.now()}`
         });
 
-        io.emit('afro_redeemed', { 
-            code: redemptionCode, 
-            amount: claimedAmount, 
-            merchant: merchantIdentity 
+        /*
+         * =====================================================
+         * REAL-TIME EVENT
+         * =====================================================
+         */
+        io.emit('g_redeemed', {
+            code: redemptionCode,
+            amount: amount,
+            currency: "G",
+            merchant: merchantIdentity
         });
 
-        res.json({ success: true, message: "AFRO redeemed successfully" });
+        return res.json({
+            success: true,
+
+            message:
+                "G redeemed successfully",
+
+            currency: "G",
+
+            amount: amount,
+
+            merchant: merchantIdentity,
+
+            platformFee: platformFee,
+
+            merchantNet: merchantNet
+        });
+
     } catch (e) {
-        console.error("Redeem error:", e);
-        res.status(500).json({ error: "REDEEM_FAILED" });
+
+        console.error(
+            "G redemption error:",
+            e
+        );
+
+        return res.status(500).json({
+            error: "REDEEM_FAILED"
+        });
     }
 });
 const EAST_AFRICA = ['KE', 'TZ', 'UG', 'RW', 'BI', 'SS', 'ET'];
@@ -4778,11 +5431,11 @@ await WalletLedger.create(
 
 
 // =====================================================
-// 10B. MINT AFRO COINS TO BUYER + CREATOR
+// 10B. MINT G TO BUYER + CREATOR
 // =====================================================
 
-const afroMint =
-    await governAfroMinting({
+const gMint =
+    await governGMinting({
         requestedAmount:
             split.gross,
 
@@ -4794,21 +5447,20 @@ const afroMint =
     });
 
 console.log(
-    "🪙 AFRO MINTING COMPLETE:",
+    "🪙 G MINTING COMPLETE:",
     {
         transactionId,
 
         buyer:
-            afroMint.buyer,
+            gMint.buyer,
 
         creator:
-            afroMint.creator,
+            gMint.creator,
 
         totalMinted:
-            afroMint.totalMinted
+            gMint.totalMinted
     }
 );
-
 
 // =====================================================
 // 11. MARK TRANSACTION COMPLETED
@@ -4867,72 +5519,44 @@ settlementResult = {
 
     accessGranted: true,
 
-    afroMinted: {
+    gMinted: {
         buyer:
-            afroMint.buyer,
+            gMint.buyer,
 
         creator:
-            afroMint.creator,
+            gMint.creator,
 
         total:
-            afroMint.totalMinted
+            gMint.totalMinted
     }
 };
-        settlementResult = {
-            alreadyProcessed: false,
 
-            creatorId:
-                creatorIdentity,
+// =====================================================
+// CLOSE TRANSACTION
+// =====================================================
 
-            creatorAmount:
-                split.creatorAmount,
+}); // closes withTransaction()
 
-            platformFee:
-                split.platformFee,
+return settlementResult;
 
-            gross:
-                split.gross,
+} catch (error) {
 
-            buyer:
-                buyerIdentity,
+    console.error(
+        "❌ CONTENT PURCHASE SETTLEMENT FAILED:",
+        {
+            transactionId,
+            postId,
+            error: error.message,
+            stack: error.stack
+        }
+    );
 
-            accessGranted: true,
+    throw error;
 
-            afroMinted: {
-                buyer:
-                    afroMint.buyer,
+} finally {
 
-                creator:
-                    afroMint.creator,
+    await session.endSession();
 
-                total:
-                    afroMint.totalMinted
-            }
-        };
-
-        }); // closes withTransaction()
-
-        return settlementResult;
-
-    } catch (error) {
-
-        console.error(
-            "❌ CONTENT PURCHASE SETTLEMENT FAILED:",
-            {
-                transactionId,
-                postId,
-                error: error.message,
-                stack: error.stack
-            }
-        );
-
-        throw error;
-
-    } finally {
-
-        await session.endSession();
-
-    }
 }
 async function triggerB2C(
     phone,
@@ -5149,32 +5773,31 @@ app.post('/api/mpesa/withdraw', async (req, res) => {
 
 
         // =====================================================
-        // MARKET RATE
-        // =====================================================
+// MARKET RATE — G
+// =====================================================
 
-        const marketPrice =
-            await calculateCurrentAfroPrice(
-                User
-            );
+const marketPrice =
+    await calculateCurrentGPrice({
+        IPRegistration,
+        Transaction,
+        GSupply,
+        usdToKesRate: 130
+    });
 
+const kesRate =
+    Number(
+        marketPrice.referencePriceKES
+    );
 
-        const kesRate =
-            Number(
-                marketPrice.kesRate
-            );
-
-
-        if (
-            !Number.isFinite(kesRate) ||
-            kesRate <= 0
-        ) {
-
-            return res.status(500).json({
-                error:
-                    "INVALID_AFRO_MARKET_RATE"
-            });
-        }
-
+if (
+    !Number.isFinite(kesRate) ||
+    kesRate <= 0
+) {
+    return res.status(500).json({
+        error:
+            "INVALID_G_MARKET_RATE"
+    });
+}
 
         // =====================================================
         // ATOMIC WALLET RESERVATION
@@ -5229,253 +5852,253 @@ app.post('/api/mpesa/withdraw', async (req, res) => {
 
 
                 // ---------------------------------------------
-                // Balances
+// Balances
+// ---------------------------------------------
+
+const earnings =
+    Number(
+        user.earnings || 0
+    );
+
+const gBalance =
+    Number(
+        user.gBalance || 0
+    );
+
+// Current KES value of user's G balance
+const gValue =
+    gBalance *
+    kesRate;
+
+const totalAvailable =
+    earnings +
+    gValue;
+
+if (
+    totalAvailable <
+    normalizedAmount
+) {
+    throw new Error(
+        "INSUFFICIENT_BALANCE"
+    );
+}
                 // ---------------------------------------------
-
-                const earnings =
-                    Number(
-                        user.earnings || 0
-                    );
-
-
-                const afroCoins =
-                    Number(
-                        user.afroCoins || 0
-                    );
-
-
-                const afroValue =
-                    afroCoins *
-                    kesRate;
-
-
-                const totalAvailable =
-                    earnings +
-                    afroValue;
-
-
-                if (
-                    totalAvailable <
-                    normalizedAmount
-                ) {
-
-                    throw new Error(
-                        "INSUFFICIENT_BALANCE"
-                    );
-                }
-
-
-                // ---------------------------------------------
-                // Determine withdrawal source
-                // ---------------------------------------------
-
-                let earningsReserved = 0;
-                let afroConverted = 0;
-
-
-                if (
-                    earnings >=
-                    normalizedAmount
-                ) {
-
-                    earningsReserved =
-                        normalizedAmount;
-
-                } else {
-
-                    earningsReserved =
-                        earnings;
-
-
-                    const needed =
-                        normalizedAmount -
-                        earningsReserved;
-
-
-                    afroConverted =
-                        Math.min(
-                            needed / kesRate,
-                            afroCoins
-                        );
-                }
-
-
-                // ---------------------------------------------
-                // Final safety check
-                // ---------------------------------------------
-
-                const resultingKES =
-                    earningsReserved +
-                    (
-                        afroConverted *
-                        kesRate
-                    );
-
-
-                if (
-                    resultingKES + 0.000001 <
-                    normalizedAmount
-                ) {
-
-                    throw new Error(
-                        "BALANCE_CONVERSION_FAILED"
-                    );
-                }
-
-
-                // ---------------------------------------------
-                // Wallet reservation
-                // ---------------------------------------------
-
-                const balanceBefore =
-                    earnings;
-
-
-                const balanceAfter =
-                    Number(
-                        (
-                            earnings -
-                            earningsReserved
-                        ).toFixed(2)
-                    );
-
-
-                user.earnings =
-                    balanceAfter;
-
-
-                user.afroCoins =
-                    Number(
-                        (
-                            afroCoins -
-                            afroConverted
-                        ).toFixed(4)
-                    );
-
-
-                await user.save({
-                    session
-                });
-
-
-                // ---------------------------------------------
-                // Create payout
-                // ---------------------------------------------
-
-                const created =
-                    await Payout.create(
-                        [{
-                            userId:
-                                user._id,
-
-                            phone:
-                                cleaned,
-
-                            amount:
-                                normalizedAmount,
-
-                            currency:
-                                "KES",
-
-                            earningsReserved,
-
-                            afroConverted,
-
-                            afroRate:
-                                kesRate,
-
-                            gateway:
-                                "mpesa_b2c",
-
-                            status:
-                                "pending",
-
-                            idempotencyKey,
-
-                            submissionAttempts:
-                                0,
-
-                            reconciliationRequired:
-                                false
-                        }],
-                        {
-                            session
-                        }
-                    );
-
-
-                payout =
-                    created[0];
-
-
-                payoutId =
-                    payout._id;
-
-
-                // ---------------------------------------------
-                // Immutable reservation ledger
-                // ---------------------------------------------
-
-                const reference =
-                    `WD-RESERVE-${payout._id}`;
-
-
-                await WalletLedger.create(
-                    [{
-                        userId:
-                            user._id,
-
-                        type:
-                            "WITHDRAWAL_RESERVE",
-
-                        direction:
-                            "DEBIT",
-
-                        amount:
-                            normalizedAmount,
-
-                        currency:
-                            "KES",
-
-                        balanceBefore,
-
-                        balanceAfter,
-
-                        reference,
-
-                        metadata: {
-
-                            payoutId:
-                                payout._id.toString(),
-
-                            phone:
-                                cleaned,
-
-                            earningsReserved,
-
-                            afroConverted,
-
-                            afroRate:
-                                kesRate,
-
-                            idempotencyKey
-                        }
-                    }],
-                    {
-                        session
-                    }
-                );
-
-
-                payout.ledgerReserveReference =
-                    reference;
-
-
-                await payout.save({
-                    session
-                });
-            }
+// Determine withdrawal source
+// ---------------------------------------------
+
+let earningsReserved = 0;
+let gAmountRedeemed = 0;
+
+// Use fiat earnings first
+if (
+    earnings >=
+    normalizedAmount
+) {
+
+    earningsReserved =
+        normalizedAmount;
+
+} else {
+
+    // Reserve all available fiat earnings
+    earningsReserved =
+        earnings;
+
+    // Remaining KES needed
+    const needed =
+        normalizedAmount -
+        earningsReserved;
+
+    // Convert the remaining KES requirement
+    // into G at the current G/KES reference rate
+    gAmountRedeemed =
+        Math.min(
+            needed / kesRate,
+            gBalance
         );
+}
+
+
+// ---------------------------------------------
+// Final safety check
+// ---------------------------------------------
+
+const resultingKES =
+    earningsReserved +
+    (
+        gAmountRedeemed *
+        kesRate
+    );
+
+if (
+    resultingKES + 0.000001 <
+    normalizedAmount
+) {
+
+    throw new Error(
+        "BALANCE_CONVERSION_FAILED"
+    );
+}
+
+
+// ---------------------------------------------
+// Wallet reservation
+// ---------------------------------------------
+
+const balanceBefore =
+    earnings;
+
+const balanceAfter =
+    Number(
+        (
+            earnings -
+            earningsReserved
+        ).toFixed(2)
+    );
+
+user.earnings =
+    balanceAfter;
+
+user.gBalance =
+    Number(
+        (
+            gBalance -
+            gAmountRedeemed
+        ).toFixed(4)
+    );
+
+await user.save({
+    session
+});
+
+
+// ---------------------------------------------
+// Create payout
+// ---------------------------------------------
+
+const created =
+    await Payout.create(
+        [{
+            userId:
+                user._id,
+
+            phone:
+                cleaned,
+
+            // FIAT amount being paid out
+            amount:
+                normalizedAmount,
+
+            currency:
+                "KES",
+
+            // Fiat earnings reserved
+            earningsReserved,
+
+            // G removed from wallet
+            gAmountRedeemed,
+
+            // KES value of 1 G at reservation
+            gRate:
+                kesRate,
+
+            gateway:
+                "mpesa_b2c",
+
+            status:
+                "pending",
+
+            idempotencyKey,
+
+            submissionAttempts:
+                0,
+
+            reconciliationRequired:
+                false
+        }],
+        {
+            session
+        }
+    );
+
+
+payout =
+    created[0];
+
+payoutId =
+    payout._id;
+
+
+// ---------------------------------------------
+// Immutable reservation ledger
+// ---------------------------------------------
+
+const reference =
+    `WD-RESERVE-${payout._id}`;
+
+await WalletLedger.create(
+    [{
+        userId:
+            user._id,
+
+        type:
+            "WITHDRAWAL_RESERVE",
+
+        direction:
+            "DEBIT",
+
+        // Ledger amount represents the
+        // fiat payout obligation
+        amount:
+            normalizedAmount,
+
+        currency:
+            "KES",
+
+        balanceBefore,
+
+        balanceAfter,
+
+        reference,
+
+        metadata: {
+
+            payoutId:
+                payout._id.toString(),
+
+            phone:
+                cleaned,
+
+            earningsReserved,
+
+            gAmountRedeemed,
+
+            gRate:
+                kesRate,
+
+            gValueKES:
+                Number(
+                    (
+                        gAmountRedeemed *
+                        kesRate
+                    ).toFixed(2)
+                ),
+
+            idempotencyKey
+        }
+    }],
+    {
+        session
+    }
+);
+
+
+payout.ledgerReserveReference =
+    reference;
+
+await payout.save({
+    session
+});
 
 
         // =====================================================
@@ -5921,48 +6544,41 @@ async function refundPayout(
 
 
                 // =================================================
-                // RESTORE BALANCES
-                // =================================================
+// RESTORE BALANCES
+// =================================================
 
-                const before =
-                    Number(
-                        user.earnings || 0
-                    );
+const before =
+    Number(
+        user.earnings || 0
+    );
 
+// Restore fiat earnings
+user.earnings =
+    Number(
+        (
+            before +
+            Number(
+                payout.earningsReserved || 0
+            )
+        ).toFixed(2)
+    );
 
-                user.earnings =
-                    Number(
-                        (
-                            before +
-                            Number(
-                                payout
-                                    .earningsReserved ||
-                                0
-                            )
-                        ).toFixed(2)
-                    );
+// Restore G that was reserved for the payout
+user.gBalance =
+    Number(
+        (
+            Number(
+                user.gBalance || 0
+            ) +
+            Number(
+                payout.gAmountRedeemed || 0
+            )
+        ).toFixed(4)
+    );
 
-
-                user.afroCoins =
-                    Number(
-                        (
-                            Number(
-                                user.afroCoins || 0
-                            ) +
-                            Number(
-                                payout
-                                    .afroConverted ||
-                                0
-                            )
-                        ).toFixed(4)
-                    );
-
-
-                await user.save({
-                    session
-                });
-
-
+await user.save({
+    session
+});
                 // =================================================
                 // IMMUTABLE REFUND LEDGER
                 // =================================================
@@ -6006,8 +6622,10 @@ async function refundPayout(
                             earningsRestored:
                                 payout.earningsReserved,
 
-                            afroCoinsRestored:
-                                payout.afroConverted
+                            gRestored:
+    payout.gAmountRedeemed,
+currency:
+    "G"
                         }
                     }],
                     {
@@ -6371,20 +6989,17 @@ app.post('/api/mpesa/b2c/result', async (req, res) => {
                         );
 
 
-                    user.afroCoins =
-                        Number(
-                            (
-                                Number(
-                                    user.afroCoins ||
-                                    0
-                                ) +
-                                Number(
-                                    lockedPayout
-                                        .afroConverted ||
-                                    0
-                                )
-                            ).toFixed(4)
-                        );
+                    user.gBalance =
+    Number(
+        (
+            Number(
+                user.gBalance || 0
+            ) +
+            Number(
+                lockedPayout.gAmountRedeemed || 0
+            )
+        ).toFixed(4)
+    );
 
 
                     await user.save({
@@ -6441,9 +7056,8 @@ app.post('/api/mpesa/b2c/result', async (req, res) => {
                                     lockedPayout
                                         .earningsReserved,
 
-                                afroCoinsRestored:
-                                    lockedPayout
-                                        .afroConverted
+                              gRestored:
+    lockedPayout.gAmountRedeemed
                             }
                         }],
                         {
@@ -6725,79 +7339,151 @@ app.post('/api/mpesa/withdraw', async (req, res) => {
         }
 
         // =========================================================
-        // 3. GET CURRENT AFRO → KES VALUE
-        // =========================================================
-        const marketPrice = await calculateCurrentAfroPrice(User);
+// 3. GET CURRENT G → KES VALUE
+// =========================================================
+const marketPrice =
+    await calculateCurrentGPrice({
+        IPRegistration,
+        Transaction,
+        GSupply,
+        usdToKesRate: 130
+    });
 
-        const kesRate = Number(marketPrice.kesRate);
+const kesRate =
+    Number(
+        marketPrice.referencePriceKES
+    );
 
-        if (!Number.isFinite(kesRate) || kesRate <= 0) {
-            return res.status(500).json({
-                error: "INVALID_AFRO_MARKET_RATE"
-            });
-        }
+if (
+    !Number.isFinite(kesRate) ||
+    kesRate <= 0
+) {
+    return res.status(500).json({
+        error: "INVALID_G_MARKET_RATE"
+    });
+}
 
-        const earningsBalance = Number(user.earnings || 0);
-        const afroBalance = Number(user.afroCoins || 0);
+const earningsBalance =
+    Number(
+        user.earnings || 0
+    );
 
-        const afroValueInKES = afroBalance * kesRate;
+const gBalance =
+    Number(
+        user.gBalance || 0
+    );
 
-        const totalAvailable =
-            earningsBalance + afroValueInKES;
+const gValueInKES =
+    gBalance *
+    kesRate;
 
-        // =========================================================
-        // 4. CHECK TOTAL AVAILABLE BALANCE
-        // =========================================================
-        if (totalAvailable < withdrawalAmount) {
-            return res.status(400).json({
-                error: "INSUFFICIENT_BALANCE",
-                details: {
-                    requested: withdrawalAmount,
-                    earnings: Number(earningsBalance.toFixed(2)),
-                    afroCoins: Number(afroBalance.toFixed(4)),
-                    afroValueKES: Number(afroValueInKES.toFixed(2)),
-                    totalAvailable: Number(totalAvailable.toFixed(2))
-                }
-            });
-        }
+const totalAvailable =
+    earningsBalance +
+    gValueInKES;
 
-        // =========================================================
-        // 5. CONVERT AFRO IF EARNINGS ARE NOT ENOUGH
-        // =========================================================
-        let afroConverted = 0;
-        let finalEarnings = earningsBalance;
-        let finalAfroBalance = afroBalance;
+// =========================================================
+// 4. CHECK TOTAL AVAILABLE BALANCE
+// =========================================================
+if (
+    totalAvailable <
+    withdrawalAmount
+) {
+    return res.status(400).json({
+        error: "INSUFFICIENT_BALANCE",
 
-        if (
-            earningsBalance < withdrawalAmount &&
-            afroBalance > 0
-        ) {
-            const neededFromAfro =
-                withdrawalAmount - earningsBalance;
+        details: {
+            requested:
+                withdrawalAmount,
 
-            afroConverted = Math.min(
-                neededFromAfro / kesRate,
-                afroBalance
-            );
-
-            finalEarnings =
-                earningsBalance +
-                (afroConverted * kesRate);
-
-            finalAfroBalance =
+            earnings:
                 Number(
-                    (afroBalance - afroConverted).toFixed(4)
-                );
-        }
+                    earningsBalance.toFixed(2)
+                ),
 
-        // =========================================================
-        // 6. VERIFY CONVERSION COVERED WITHDRAWAL
-        // =========================================================
-        if (finalEarnings < withdrawalAmount) {
-            return res.status(400).json({
-                error: "BALANCE_CONVERSION_FAILED"
-            });
+            gBalance:
+                Number(
+                    gBalance.toFixed(4)
+                ),
+
+            gValueKES:
+                Number(
+                    gValueInKES.toFixed(2)
+                ),
+
+            totalAvailable:
+                Number(
+                    totalAvailable.toFixed(2)
+                )
         }
+    });
+}
+
+// =========================================================
+// 5. CONVERT G IF EARNINGS ARE NOT ENOUGH
+// =========================================================
+let gAmountRedeemed = 0;
+
+let finalEarnings =
+    earningsBalance;
+
+let finalGBalance =
+    gBalance;
+
+if (
+    earningsBalance <
+        withdrawalAmount &&
+    gBalance > 0
+) {
+
+    const neededFromG =
+        withdrawalAmount -
+        earningsBalance;
+
+    // Exact G amount required to cover
+    // the remaining KES withdrawal
+    gAmountRedeemed =
+        neededFromG /
+        kesRate;
+
+    // Safety check
+    if (
+        gAmountRedeemed >
+        gBalance
+    ) {
+        return res.status(400).json({
+            error:
+                "BALANCE_CONVERSION_FAILED"
+        });
+    }
+
+    finalEarnings =
+        earningsBalance +
+        (
+            gAmountRedeemed *
+            kesRate
+        );
+
+    finalGBalance =
+        Number(
+            (
+                gBalance -
+                gAmountRedeemed
+            ).toFixed(4)
+        );
+}
+
+// =========================================================
+// 6. VERIFY CONVERSION COVERED WITHDRAWAL
+// =========================================================
+if (
+    finalEarnings + 0.000001 <
+    withdrawalAmount
+) {
+    return res.status(400).json({
+        error:
+            "BALANCE_CONVERSION_FAILED"
+    });
+}
 
         // =========================================================
         // 7. INITIATE M-PESA B2C
@@ -6830,65 +7516,65 @@ app.post('/api/mpesa/withdraw', async (req, res) => {
         }
 
         // =========================================================
-        // 9. SAVE BALANCE STATE
-        //
-        // IMPORTANT:
-        // We only update the converted AFRO balance here.
-        //
-        // Earnings should be finalized by the B2C ResultURL
-        // after Safaricom confirms the actual payout result.
-        // =========================================================
-        if (afroConverted > 0) {
-            await User.findOneAndUpdate(
-                { identity: cleaned },
-                {
-                    $set: {
-                        afroCoins: finalAfroBalance
-                    }
-                }
-            );
+// 9. SAVE BALANCE STATE
+//
+// IMPORTANT:
+// We only update the converted G balance here.
+//
+// Earnings should be finalized by the B2C ResultURL
+// after Safaricom confirms the actual payout result.
+// =========================================================
+if (gAmountRedeemed > 0) {
+    await User.findOneAndUpdate(
+        { identity: cleaned },
+        {
+            $set: {
+                gBalance: finalGBalance
+            }
         }
+    );
+}
 
-        // =========================================================
-        // 10. RETURN SUCCESS
-        // =========================================================
-        return res.json({
-            success: true,
-            message: "Withdrawal initiated successfully",
+// =========================================================
+// 10. RETURN SUCCESS
+// =========================================================
+return res.json({
+    success: true,
+    message:
+        "Withdrawal initiated successfully",
 
-            phone: cleaned,
+    phone:
+        cleaned,
 
-            amount: withdrawalAmount,
+    amount:
+        withdrawalAmount,
 
-            currency: "KES",
+    currency:
+        "KES",
 
-            afroConverted: Number(
-                afroConverted.toFixed(4)
-            ),
+    gAmountRedeemed:
+        Number(
+            gAmountRedeemed.toFixed(4)
+        ),
 
-            afroValueKES: Number(
-                (afroConverted * kesRate).toFixed(2)
-            ),
+    gValueKES:
+        Number(
+            (
+                gAmountRedeemed *
+                kesRate
+            ).toFixed(2)
+        ),
 
-            gateway: "mpesa_b2c",
+    gRate:
+        Number(
+            kesRate.toFixed(4)
+        ),
 
-            data: b2cResponse
-        });
+    gateway:
+        "mpesa_b2c",
 
-    } catch (err) {
-
-        console.error(
-            "❌ M-PESA WITHDRAWAL ERROR:",
-            err.response?.data || err.message
-        );
-
-        return res.status(500).json({
-            error: "MPESA_B2C_WITHDRAWAL_FAILED",
-            details:
-                err.response?.data ||
-                err.message
-        });
-    }
+    data:
+        b2cResponse
 });
 // === STRIPE CONNECT ONBOARDING (Add this) ===
 app.post('/api/stripe/onboard', async (req, res) => {
@@ -6947,65 +7633,204 @@ function getCountryFromPhone(phone) {
 }
 
 // Generate redeemable code for physical stores / merchants
-app.post('/api/afro/generate-redemption', async (req, res) => {
+app.post('/api/g/generate-redemption', async (req, res) => {
     const { identity, amount } = req.body;
+
     const cleaned = cleanPhone(identity);
+    const redemptionAmount = Number(amount);
+
+    if (
+        !cleaned ||
+        !Number.isFinite(redemptionAmount) ||
+        redemptionAmount <= 0
+    ) {
+        return res.status(400).json({
+            error: "INVALID_AMOUNT"
+        });
+    }
+
     try {
-        const user = await User.findOne({ identity: cleaned });
-        if (!user || user.afroCoins < parseFloat(amount)) {
-            return res.status(400).json({ error: "INSUFFICIENT_AFRO" });
+        const user = await User.findOne({
+            identity: cleaned
+        });
+
+        if (!user || user.gBalance < redemptionAmount) {
+            return res.status(400).json({
+                error: "INSUFFICIENT_G"
+            });
         }
 
         const code = generateRedemptionCode();
-        
-        await User.findOneAndUpdate(
-            { identity: cleaned },
-            { 
-                $inc: { afroCoins: -parseFloat(amount) },
-                $push: { redemptionHistory: { code, amount: parseFloat(amount), merchantId: null } }
+
+        const updatedUser = await User.findOneAndUpdate(
+            {
+                identity: cleaned,
+                gBalance: { $gte: redemptionAmount }
+            },
+            {
+                $inc: {
+                    gBalance: -redemptionAmount
+                },
+                $push: {
+                    redemptionHistory: {
+                        code,
+                        amount: redemptionAmount,
+                        merchantId: null
+                    }
+                }
+            },
+            {
+                new: true
             }
         );
 
-        res.json({ success: true, redemptionCode: code, amount: parseFloat(amount) });
+        if (!updatedUser) {
+            return res.status(400).json({
+                error: "INSUFFICIENT_G"
+            });
+        }
+
+        return res.json({
+            success: true,
+            redemptionCode: code,
+            amount: redemptionAmount,
+            currency: "G"
+        });
+
     } catch (e) {
-        res.status(500).json({ error: "GENERATION_FAILED" });
+        console.error("G redemption generation failed:", e);
+
+        return res.status(500).json({
+            error: "GENERATION_FAILED"
+        });
     }
 });
 
 
 
-// P2P AFRO Transfer (phone-to-phone, cross-border)
-app.post('/api/afro/transfer', async (req, res) => {
-    const { senderIdentity, recipientIdentity, amount } = req.body;
+app.post('/api/g/transfer', async (req, res) => {
+    const {
+        senderIdentity,
+        recipientIdentity,
+        amount
+    } = req.body;
+
     const cleanedSender = cleanPhone(senderIdentity);
     const cleanedRecipient = cleanPhone(recipientIdentity);
+    const transferAmount = Number(amount);
 
-    if (!amount || amount <= 0) return res.status(400).json({ error: "INVALID_AMOUNT" });
+    if (
+        !Number.isFinite(transferAmount) ||
+        transferAmount <= 0
+    ) {
+        return res.status(400).json({
+            error: "INVALID_AMOUNT"
+        });
+    }
+
+    if (cleanedSender === cleanedRecipient) {
+        return res.status(400).json({
+            error: "SELF_TRANSFER_NOT_ALLOWED"
+        });
+    }
+
+    const session = await mongoose.startSession();
 
     try {
-        const sender = await User.findOne({ identity: cleanedSender });
-        if (!sender || sender.afroCoins < amount) return res.status(400).json({ error: "INSUFFICIENT_AFRO" });
+        session.startTransaction();
 
-        await User.findOneAndUpdate(
-            { identity: cleanedRecipient },
-            { $inc: { afroCoins: amount } },
-            { upsert: true }
+        // 1. Atomically deduct G from sender
+        const sender = await User.findOneAndUpdate(
+            {
+                identity: cleanedSender,
+                gBalance: { $gte: transferAmount }
+            },
+            {
+                $inc: {
+                    gBalance: -transferAmount
+                }
+            },
+            {
+                new: true,
+                session
+            }
         );
 
-        sender.afroCoins = Number((sender.afroCoins - amount).toFixed(4));
-        await sender.save();
+        if (!sender) {
+            await session.abortTransaction();
 
-        await Transaction.create({
-            checkoutID: `AFRO-XFER-${Date.now()}`,
-            userPhone: cleanedSender,
-            amountPaid: amount,
-            type: 'afro_transfer',
-            status: 'completed'
+            return res.status(400).json({
+                error: "INSUFFICIENT_G"
+            });
+        }
+
+        // 2. Credit G to an existing recipient
+        const recipient = await User.findOneAndUpdate(
+            {
+                identity: cleanedRecipient
+            },
+            {
+                $inc: {
+                    gBalance: transferAmount
+                }
+            },
+            {
+                new: true,
+                session
+            }
+        );
+
+        if (!recipient) {
+            await session.abortTransaction();
+
+            return res.status(404).json({
+                error: "RECIPIENT_NOT_FOUND"
+            });
+        }
+
+        // 3. Record the G transfer
+        await Transaction.create(
+            [{
+                checkoutID:
+                    `G-XFER-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
+
+                userPhone: cleanedSender,
+
+                amountPaid: transferAmount,
+
+                currency: "G",
+
+                type: "g_transfer",
+
+                status: "completed",
+
+                completedAt: new Date()
+            }],
+            { session }
+        );
+
+        // 4. Commit deduction + credit + ledger entry together
+        await session.commitTransaction();
+
+        return res.json({
+            success: true,
+            currency: "G",
+            amount: transferAmount,
+            message: "G transferred",
+            newBalance: sender.gBalance
         });
 
-        res.json({ success: true, message: "AFRO transferred", newBalance: sender.afroCoins });
     } catch (e) {
-        res.status(500).json({ error: "TRANSFER_FAILED" });
+        await session.abortTransaction();
+
+        console.error("G transfer failed:", e);
+
+        return res.status(500).json({
+            error: "TRANSFER_FAILED"
+        });
+
+    } finally {
+        await session.endSession();
     }
 });
 app.post('/api/posts', upload.any(), async (req, res) => {
@@ -8334,15 +9159,16 @@ app.post('/api/nodes/connect', async (req, res) => {
         
         const nodeCount = await User.countDocuments({}); 
         
-        return res.json({ 
-            success: true, 
-            nodeCount, 
-            user: {
-                identity: user.identity,
-                afroCoins: user.afroCoins || 0,
-                earnings: user.earnings || 0
-            }
-        });
+       return res.json({
+    success: true,
+    nodeCount,
+    user: {
+        identity: user.identity,
+        gBalance: user.gBalance || 0,
+        earnings: user.earnings || 0
+    }
+});
+        
     } catch (err) { 
         console.error("❌ CRITICAL: /api/nodes/connect sync exception:", err.message);
         return res.status(500).json({ success: false, error: "Sync Failure", details: err.message }); 
@@ -9640,42 +10466,101 @@ app.get('/api/governance/ledger', async (req, res) => {
 });
 app.get('/api/governance/sidebar', async (req, res) => {
     try {
-        const [nodes, activeIPs, vault, liveTaxRate] = await Promise.all([
+        const [
+            nodes,
+            activeIPs,
+            vault,
+            liveTaxRate
+        ] = await Promise.all([
             User.countDocuments({}),
-            Post.countDocuments({ is_burned: false }),
-            Vault.findOne({ id: 'protocol_vault' }).lean(),
+
+            Post.countDocuments({
+                is_burned: false
+            }),
+
+            Vault.findOne({
+                id: 'protocol_vault'
+            }).lean(),
+
             calculateLiveTax()
         ]);
-        
-        res.json({ 
-            nodes, 
+
+        res.json({
+            nodes,
+
             activeIPs,
-            vaultBalance: vault ? vault.balance.toFixed(2) : "0.00",
-            platformReserve: vault ? vault.platformAfroReserve.toFixed(2) : "0.00",
-            liveTax: (liveTaxRate * 100).toFixed(2) + "%",
-            efficiency: "LOW_FEE", // Maps directly to gasEfficiencyDisplay
-            uplink: "99.2%"        // Maps directly to uplinkDisplay
+
+            vaultBalance:
+                vault
+                    ? Number(
+                        vault.balance || 0
+                    ).toFixed(2)
+                    : "0.00",
+
+            platformReserve:
+                vault
+                    ? Number(
+                        vault.platformGReserve || 0
+                    ).toFixed(4)
+                    : "0.0000",
+
+            liveTax:
+                (liveTaxRate * 100).toFixed(2) + "%",
+
+            efficiency:
+                "LOW_FEE",
+
+            uplink:
+                "99.2%"
         });
-    } catch (err) { 
-        console.error("❌ Governance Data Pulse Failed:", err);
-        res.status(500).json({ error: "Governance Data Pulse Failed" }); 
+
+    } catch (err) {
+
+        console.error(
+            "❌ Governance Data Pulse Failed:",
+            err
+        );
+
+        res.status(500).json({
+            error:
+                "Governance Data Pulse Failed"
+        });
     }
 });
 
 app.get('/api/stats', async (req, res) => {
     try {
-        const vault = await Vault.findOne({ id: 'protocol_vault' });
-        const userCount = await User.countDocuments({});
-        const currentLiveRate = await calculateLiveTax();
-        res.json({ 
-            taxVault: vault ? (vault.balance || 0).toFixed(2) : "0.00", 
-            userCount: userCount, 
-            platformReserve: vault ? (vault.platformAfroReserve || 0).toFixed(2) : "0.00", 
-            currentTaxRate: (currentLiveRate * 100).toFixed(2) + "%" 
+        const vault = await Vault.findOne({
+            id: 'protocol_vault'
         });
-    } catch (err) { res.status(500).json({ error: "Stats failure" }); }
-});
 
+        const userCount = await User.countDocuments({});
+
+        const currentLiveRate = await calculateLiveTax();
+
+        return res.json({
+            taxVault: vault
+                ? Number(vault.balance || 0).toFixed(2)
+                : "0.00",
+
+            userCount,
+
+            platformGReserve: vault
+                ? Number(vault.platformGReserve || 0).toFixed(2)
+                : "0.00",
+
+            currentTaxRate:
+                (currentLiveRate * 100).toFixed(2) + "%"
+        });
+
+    } catch (err) {
+        console.error("Stats failure:", err);
+
+        return res.status(500).json({
+            error: "Stats failure"
+        });
+    }
+});
 app.get('/api/search', async (req, res) => {
     const { q } = req.query;
     try {
@@ -9804,38 +10689,277 @@ app.delete('/api/v1/privacy/erasure', async (req, res) => {
 
 /**
  * =========================================================================
- * PROTOCOL CORE CONFIGURATION: AFRO COIN VALUATION BONDING CURVE PARAMETERS
+ * G PROTOCOL — ECONOMIC ACTIVITY VALUATION ENGINE
  * =========================================================================
- * Base Scale: Starts at 1 KES (~0.0078 USD) at launch.
- * Max Scale: Caps out exactly at 5.00 USD when user baseline scales to 1,000,000.
+ *
+ * G is NOT priced from raw user count.
+ *
+ * Reference value is derived from:
+ *
+ *   1. Verified IP creation costs
+ *   2. Storage / processing / delivery costs
+ *   3. IP registration / protection costs
+ *   4. Verified marketplace transaction value
+ *   5. Licensing / royalty activity
+ *   6. Verified secondary-market activity
+ *   7. Network-quality / economic-integrity factor
+ *   8. Circulating G supply
+ *
+ * Qualifying fiat transactions allocate 10% toward G issuance.
+ *
+ * IMPORTANT:
+ * This produces a protocol reference value. It does NOT guarantee
+ * that G will trade at that value on an external market.
+ * =========================================================================
  */
-const CURVE_CONFIG = {
-    TARGET_USERS: 1000000,
-    START_PRICE_USD: 0.0078,
-    MAX_PRICE_USD: 5.00,
-    USD_TO_KES: 130.00 // Static standard rail peg. Dynamically pull from exchange API if necessary.
+
+const G_CONFIG = {
+
+    // 10% of every qualifying completed transaction
+    // is allocated to G issuance.
+    MINTING_RATE: 0.10,
+
+    // Economic activity weighting factors.
+    ALPHA_TRANSACTION: 1.00,
+    BETA_LICENSING: 1.00,
+    GAMMA_SECONDARY: 1.00,
+
+    // Initial G reference value.
+    INITIAL_REFERENCE_USD: 1.00,
+
+    // Minimum quality factor.
+    MIN_QUALITY_FACTOR: 0.00,
+
+    // Maximum quality factor.
+    MAX_QUALITY_FACTOR: 1.00
 };
 
-/**
- * Helper Utility: Server-Side Bonding Curve Evaluation Engine
- * Automatically calculates the real-time token price based on organic platform user density.
- */
-async function calculateCurrentAfroPrice(UserCollectionModel) {
-    const totalUsers = await UserCollectionModel.countDocuments({});
-    const baseUsers = totalUsers || 1; // Safeguard against division-by-zero errors
 
-    // Bounded Linear Progression Curve Matrix
-    const growthRatio = Math.min(baseUsers, CURVE_CONFIG.TARGET_USERS) / CURVE_CONFIG.TARGET_USERS;
-    const currentPriceUSD = CURVE_CONFIG.START_PRICE_USD + ((CURVE_CONFIG.MAX_PRICE_USD - CURVE_CONFIG.START_PRICE_USD) * growthRatio);
-    
-    // Format output targets with clean math rounding bounds
-    const roundedUSD = Math.round(currentPriceUSD * 10000) / 10000;
-    const roundedKES = Math.round((roundedUSD * CURVE_CONFIG.USD_TO_KES) * 100) / 100;
+/**
+ * =========================================================================
+ * G ECONOMIC REFERENCE PRICE
+ * =========================================================================
+ *
+ * P(t) =
+ *
+ * [ Σ(C + D + R)
+ *   + αT
+ *   + βL
+ *   + γX
+ * ] × Q
+ * -----------------
+ *        S
+ *
+ * Returns USD and KES reference values.
+ * =========================================================================
+ */
+
+async function calculateCurrentGPrice({
+    IPRegistration,
+    Transaction,
+    GSupply,
+    usdToKesRate
+}) {
+
+    // ---------------------------------------------------------------------
+    // 1. VERIFIED IP ECONOMIC BASE
+    // ---------------------------------------------------------------------
+
+    const ipRecords = await IPRegistration.find({
+        status: "registered"
+    }).lean();
+
+    let verifiedIPBaseUSD = 0;
+
+    for (const ip of ipRecords) {
+
+        const creationCost =
+            Number(ip.creationCostUSD || 0);
+
+        const deliveryCost =
+            Number(ip.deliveryCostUSD || 0);
+
+        const registrationCost =
+            Number(ip.registrationCostUSD || 0);
+
+        verifiedIPBaseUSD +=
+            creationCost +
+            deliveryCost +
+            registrationCost;
+    }
+
+
+    // ---------------------------------------------------------------------
+    // 2. VERIFIED MARKETPLACE TRANSACTIONS
+    // ---------------------------------------------------------------------
+
+    const completedTransactions =
+        await Transaction.find({
+            status: "completed"
+        }).lean();
+
+    let transactionValueUSD = 0;
+    let licensingValueUSD = 0;
+    let secondaryMarketValueUSD = 0;
+
+    for (const tx of completedTransactions) {
+
+        const amountUSD =
+            Number(tx.amountUSD || 0);
+
+        const type =
+            String(tx.type || "").toLowerCase();
+
+        if (
+            type === "ip_access" ||
+            type === "product_purchase" ||
+            type === "g_purchase" ||
+            type === "marketplace_purchase"
+        ) {
+            transactionValueUSD += amountUSD;
+        }
+
+        if (
+            type === "license" ||
+            type === "royalty"
+        ) {
+            licensingValueUSD += amountUSD;
+        }
+
+        if (
+            type === "p2p_resale" ||
+            type === "secondary_market"
+        ) {
+            secondaryMarketValueUSD += amountUSD;
+        }
+    }
+
+
+    // ---------------------------------------------------------------------
+    // 3. G SUPPLY
+    // ---------------------------------------------------------------------
+
+    const supplyRecord =
+        await GSupply.findOne({
+            id: "g_supply"
+        }).lean();
+
+    const circulatingSupply =
+        Math.max(
+            Number(supplyRecord?.circulatingSupply || 0),
+            1
+        );
+
+
+    // ---------------------------------------------------------------------
+    // 4. ECONOMIC INTEGRITY / NETWORK QUALITY
+    // ---------------------------------------------------------------------
+    //
+    // Q = qI × qT × qU × qL × qC
+    //
+    // Each component should eventually be calculated from verified
+    // protocol data rather than simply trusting user input.
+    // ---------------------------------------------------------------------
+
+    const qI =
+        Number(supplyRecord?.ipIntegrityFactor ?? 1);
+
+    const qT =
+        Number(supplyRecord?.transactionIntegrityFactor ?? 1);
+
+    const qU =
+        Number(supplyRecord?.userIntegrityFactor ?? 1);
+
+    const qL =
+        Number(supplyRecord?.licensingIntegrityFactor ?? 1);
+
+    const qC =
+        Number(supplyRecord?.crossBorderIntegrityFactor ?? 1);
+
+    const qualityFactor = Math.min(
+        Math.max(
+            qI * qT * qU * qL * qC,
+            G_CONFIG.MIN_QUALITY_FACTOR
+        ),
+        G_CONFIG.MAX_QUALITY_FACTOR
+    );
+
+
+    // ---------------------------------------------------------------------
+    // 5. ECONOMIC VALUE
+    // ---------------------------------------------------------------------
+
+    const weightedEconomicValueUSD =
+        verifiedIPBaseUSD +
+        (G_CONFIG.ALPHA_TRANSACTION * transactionValueUSD) +
+        (G_CONFIG.BETA_LICENSING * licensingValueUSD) +
+        (G_CONFIG.GAMMA_SECONDARY * secondaryMarketValueUSD);
+
+
+    // ---------------------------------------------------------------------
+    // 6. APPLY ECONOMIC QUALITY
+    // ---------------------------------------------------------------------
+
+    const adjustedEconomicValueUSD =
+        weightedEconomicValueUSD * qualityFactor;
+
+
+    // ---------------------------------------------------------------------
+    // 7. CALCULATE G REFERENCE VALUE
+    // ---------------------------------------------------------------------
+
+    let referencePriceUSD =
+        adjustedEconomicValueUSD / circulatingSupply;
+
+
+    // Prevent an empty/new network from producing $0 unintentionally.
+    if (
+        !Number.isFinite(referencePriceUSD) ||
+        referencePriceUSD <= 0
+    ) {
+        referencePriceUSD =
+            G_CONFIG.INITIAL_REFERENCE_USD;
+    }
+
+
+    // ---------------------------------------------------------------------
+    // 8. CONVERT TO KES
+    // ---------------------------------------------------------------------
+
+    const rateUSDToKES =
+        Number(usdToKesRate || 130);
+
+    const referencePriceKES =
+        referencePriceUSD * rateUSDToKES;
+
 
     return {
-        totalUsers: baseUsers,
-        usdRate: roundedUSD,
-        kesRate: roundedKES
+
+        referencePriceUSD:
+            Number(referencePriceUSD.toFixed(8)),
+
+        referencePriceKES:
+            Number(referencePriceKES.toFixed(4)),
+
+        circulatingSupply,
+
+        verifiedIPBaseUSD:
+            Number(verifiedIPBaseUSD.toFixed(2)),
+
+        transactionValueUSD:
+            Number(transactionValueUSD.toFixed(2)),
+
+        licensingValueUSD:
+            Number(licensingValueUSD.toFixed(2)),
+
+        secondaryMarketValueUSD:
+            Number(secondaryMarketValueUSD.toFixed(2)),
+
+        qualityFactor:
+            Number(qualityFactor.toFixed(8)),
+
+        economicBaseUSD:
+            Number(adjustedEconomicValueUSD.toFixed(2))
     };
 }
 
@@ -9867,49 +10991,90 @@ setInterval(async () => {
 // ENDPOINT 1: POST AN AD (SELLER LOCKS TOKENS INTO ESCROW DEPOSIT POOL)
 // =========================================================================
 // =========================================================================
-// ENDPOINT 1: POST AN AD (SELLER LOCKS TOKENS INTO ESCROW)
 app.post('/api/orders/create', async (req, res) => {
     try {
-        const { sellerIdentity, afroAmount, paymentMethodDetails } = req.body;
-        const parsedAmount = parseFloat(afroAmount);
+        const {
+            sellerIdentity,
+            gAmount,
+            paymentMethodDetails
+        } = req.body;
 
-        if (!sellerIdentity || !parsedAmount || parsedAmount <= 0 || !paymentMethodDetails) {
-            return res.status(400).json({ success: false, message: "Invalid parameters." });
+        const parsedAmount = Number(gAmount);
+
+        if (
+            !sellerIdentity ||
+            !Number.isFinite(parsedAmount) ||
+            parsedAmount <= 0 ||
+            !paymentMethodDetails
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid parameters."
+            });
         }
 
-        const seller = await User.findOne({ identity: sellerIdentity.trim() });
-        if (!seller || seller.afroCoins < parsedAmount) {
-            return res.status(400).json({ success: false, message: "Insufficient AFRO balance." });
+        const cleanedSeller = sellerIdentity.trim();
+
+        const seller = await User.findOne({
+            identity: cleanedSeller
+        });
+
+        if (!seller || seller.gBalance < parsedAmount) {
+            return res.status(400).json({
+                success: false,
+                message: "Insufficient G balance."
+            });
         }
 
-        const marketPrice = await calculateCurrentAfroPrice(User);
+        // Get current G/KES reference rate
+        const marketPrice = await calculateCurrentGPrice(User);
         const dynamicRateKES = marketPrice.kesRate;
-        const totalFiatKES = Math.round((parsedAmount * dynamicRateKES) * 100) / 100;
 
-        // Deduct AFRO (locked in escrow)
-        seller.afroCoins = Number((seller.afroCoins - parsedAmount).toFixed(4));
+        const totalFiatKES =
+            Math.round(
+                (parsedAmount * dynamicRateKES) * 100
+            ) / 100;
+
+        // Deduct G from seller and place it in escrow
+        seller.gBalance = Number(
+            (seller.gBalance - parsedAmount).toFixed(4)
+        );
+
         await seller.save();
 
         const newOrder = await P2POrder.create({
-            sellerIdentity: sellerIdentity.trim(),
-            afroAmount: parsedAmount,
-            fiatRatePerCoin: dynamicRateKES,
+            sellerIdentity: cleanedSeller,
+
+            // G amount being offered
+            gAmount: parsedAmount,
+
+            // Current G/KES reference rate
+            fiatRatePerG: dynamicRateKES,
+
+            // Total KES required from buyer
             fiatTotal: totalFiatKES,
-            paymentMethodDetails: paymentMethodDetails.trim(),
+
+            paymentMethodDetails:
+                paymentMethodDetails.trim(),
+
             status: 'OPEN'
         });
 
-        return res.status(201).json({ 
-            success: true, 
+        return res.status(201).json({
+            success: true,
             order: newOrder,
-            message: "Order created and AFRO locked in escrow."
+            message: "Order created and G locked in escrow."
         });
+
     } catch (err) {
-        console.error("Order create error:", err);
-        return res.status(500).json({ success: false, message: err.message });
+        console.error("G order create error:", err);
+
+        return res.status(500).json({
+            success: false,
+            message: err.message
+        });
     }
 });
-
 
 
 // =========================================================================
@@ -10035,9 +11200,12 @@ app.post('/api/orders/complete', async (req, res) => {
         // Fixed: Use historical locked fiat totals instead of recalculating an evolving asset curve post-facto
         const finalPayoutKES = order.fiatTotal;
 
-        // Credit the asset balance securely over to the buyer profile mapping
-        buyer.afroCoins = Number((buyer.afroCoins + order.afroAmount).toFixed(4));
-        await buyer.save();
+        // Credit the G balance securely to the buyer
+buyer.gBalance = Number(
+    (buyer.gBalance + order.gAmount).toFixed(4)
+);
+
+await buyer.save();
 
         // Increment the seller's tracking ledger with the exact locked system calculated earnings equity
         await User.findOneAndUpdate(
@@ -10079,98 +11247,247 @@ app.get('/api/orders/open', async (req, res) => {
 
 
 // =========================================================================
-// ENDPOINT 6: SYSTEM TICKER VALUE ROUTE (SERVES LIVE LOGS TO FRONTEND DISPLAY)
+// ENDPOINT 6: G SYSTEM TICKER VALUE ROUTE
+// SERVES LIVE ECONOMIC VALUATION TO FRONTEND DISPLAY
 // =========================================================================
-app.get('/api/market/afro-value', async (req, res) => {
+
+app.get('/api/market/g-value', async (req, res) => {
     try {
-        const marketPrice = await calculateCurrentAfroPrice(User);
+
+        const marketPrice = await calculateCurrentGPrice({
+            IPRegistration,
+            Transaction,
+            GSupply,
+            usdToKesRate: 130
+        });
 
         return res.status(200).json({
             success: true,
+
             metrics: {
-                totalUsers: marketPrice.totalUsers,
-                targetUsersMilestone: CURVE_CONFIG.TARGET_USERS
+                circulatingSupply:
+                    marketPrice.circulatingSupply,
+
+                economicBaseUSD:
+                    marketPrice.economicBaseUSD,
+
+                verifiedIPBaseUSD:
+                    marketPrice.verifiedIPBaseUSD,
+
+                transactionValueUSD:
+                    marketPrice.transactionValueUSD,
+
+                licensingValueUSD:
+                    marketPrice.licensingValueUSD,
+
+                secondaryMarketValueUSD:
+                    marketPrice.secondaryMarketValueUSD,
+
+                qualityFactor:
+                    marketPrice.qualityFactor
             },
+
             valuation: {
-                usd: marketPrice.usdRate,
-                kes: marketPrice.kesRate
+                currency: "G",
+                usd: marketPrice.referencePriceUSD,
+                kes: marketPrice.referencePriceKES
             }
+
         });
+
     } catch (error) {
-        return res.status(500).json({ success: false, error: error.message });
+
+        console.error(
+            "G market valuation error:",
+            error
+        );
+
+        return res.status(500).json({
+            success: false,
+            error: "G_VALUATION_FAILED"
+        });
     }
 });
 
 module.exports = app;
 
-// SEND AFRO TO ANOTHER NODE (P2P + external readiness)
-app.post('/api/afro/transfer', async (req, res) => {
+app.post('/api/g/transfer', async (req, res) => {
     const { senderIdentity, recipientIdentity, amount } = req.body;
+
     const cleanedSender = cleanPhone(senderIdentity);
     const cleanedRecipient = cleanPhone(recipientIdentity);
+    const transferAmount = Number(amount);
 
-    if (!amount || amount <= 0) return res.status(400).json({ error: "INVALID_AMOUNT" });
+    if (!Number.isFinite(transferAmount) || transferAmount <= 0) {
+        return res.status(400).json({ error: "INVALID_AMOUNT" });
+    }
+
+    if (cleanedSender === cleanedRecipient) {
+        return res.status(400).json({ error: "SELF_TRANSFER_NOT_ALLOWED" });
+    }
+
+    const session = await mongoose.startSession();
 
     try {
-        const sender = await User.findOne({ identity: cleanedSender });
-        if (!sender || sender.afroCoins < amount) {
-            return res.status(400).json({ error: "INSUFFICIENT_AFRO" });
-        }
+        session.startTransaction();
 
-        const recipient = await User.findOneAndUpdate(
-            { identity: cleanedRecipient },
-            { $inc: { afroCoins: amount } },
-            { upsert: true, new: true }
+        // 1. Atomically deduct G from sender
+        const sender = await User.findOneAndUpdate(
+            {
+                identity: cleanedSender,
+                gBalance: { $gte: transferAmount }
+            },
+            {
+                $inc: { gBalance: -transferAmount }
+            },
+            {
+                new: true,
+                session
+            }
         );
 
-        sender.afroCoins = Number((sender.afroCoins - amount).toFixed(4));
-        await sender.save();
+        if (!sender) {
+            await session.abortTransaction();
+            return res.status(400).json({
+                error: "INSUFFICIENT_G"
+            });
+        }
 
-        // Optional: Record in ledger
-        await Transaction.create({
-            checkoutID: `AFRO-XFER-${Date.now()}`,
+        // 2. Credit G to recipient
+        const recipient = await User.findOneAndUpdate(
+            { identity: cleanedRecipient },
+            {
+                $inc: { gBalance: transferAmount }
+            },
+            {
+                new: true,
+                session
+            }
+        );
+
+        if (!recipient) {
+            await session.abortTransaction();
+            return res.status(404).json({
+                error: "RECIPIENT_NOT_FOUND"
+            });
+        }
+
+        // 3. Record transfer
+        await Transaction.create([{
+            checkoutID: `G-XFER-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
             userPhone: cleanedSender,
-            amountPaid: amount,
-            type: 'afro_transfer',
-            status: 'completed'
-        });
+            amountPaid: transferAmount,
+            currency: "G",
+            type: "g_transfer",
+            status: "completed",
+            completedAt: new Date()
+        }], { session });
 
-        res.json({ success: true, newSenderBalance: sender.afroCoins });
-    } catch (e) {
-        res.status(500).json({ error: "TRANSFER_FAILED" });
-    }
-});
-// === MERCHANT DASHBOARD BACKEND ===
-app.get('/api/merchant/history', async (req, res) => {
-    const { identity } = req.query;
-    const cleaned = cleanPhone(identity);
-    
-    try {
-        // Get redemptions where this user acted as merchant
-        const user = await User.findOne({ identity: cleaned });
-        
-        const redemptions = await Payout.find({
-            recipientNode: cleaned,
-            parentTxID: { $regex: /^AFRO-/ } // Only AFRO redemptions
-        }).sort({ timestamp: -1 }).limit(50);
+        // 4. Commit everything atomically
+        await session.commitTransaction();
 
         res.json({
             success: true,
-            merchantIdentity: cleaned,
-            totalRedeemed: redemptions.reduce((sum, p) => sum + p.grossAmount, 0),
-            redemptions: redemptions.map(p => ({
-                code: p.parentTxID,
-                amount: p.grossAmount,
-                netAmount: p.creatorNet,
-                timestamp: p.timestamp,
-                status: p.status
-            }))
+            currency: "G",
+            amount: transferAmount,
+            newSenderBalance: sender.gBalance
         });
-    } catch (err) {
-        res.status(500).json({ error: "MERCHANT_HISTORY_FAILED" });
+
+    } catch (e) {
+        await session.abortTransaction();
+
+        console.error("G transfer failed:", e);
+
+        res.status(500).json({
+            error: "TRANSFER_FAILED"
+        });
+
+    } finally {
+        await session.endSession();
     }
 });
+// === MERCHANT DASHBOARD BACKEND ===
+// =========================================================================
+// ENDPOINT: G MERCHANT REDEMPTION HISTORY
+// =========================================================================
 
+app.get('/api/merchant/history', async (req, res) => {
+    const { identity } = req.query;
+    const cleaned = cleanPhone(identity);
+
+    try {
+
+        // Verify merchant exists
+        const user = await User.findOne({
+            identity: cleaned
+        });
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                error: "MERCHANT_NOT_FOUND"
+            });
+        }
+
+        // Get G redemptions where this user acted as merchant
+        const redemptions = await Payout.find({
+            recipientNode: cleaned,
+            parentTxID: {
+                $regex: /^G-/
+            }
+        })
+        .sort({ timestamp: -1 })
+        .limit(50);
+
+        const totalRedeemed = redemptions.reduce(
+            (sum, payout) =>
+                sum + Number(payout.grossAmount || 0),
+            0
+        );
+
+        return res.json({
+
+            success: true,
+
+            currency: "G",
+
+            merchantIdentity: cleaned,
+
+            totalRedeemed:
+                Number(totalRedeemed.toFixed(4)),
+
+            redemptions: redemptions.map(payout => ({
+
+                code: payout.parentTxID,
+
+                amount:
+                    Number(payout.grossAmount || 0),
+
+                netAmount:
+                    Number(payout.creatorNet || 0),
+
+                timestamp:
+                    payout.timestamp,
+
+                status:
+                    payout.status
+
+            }))
+        });
+
+    } catch (err) {
+
+        console.error(
+            "G merchant history failed:",
+            err
+        );
+
+        return res.status(500).json({
+            success: false,
+            error: "MERCHANT_HISTORY_FAILED"
+        });
+    }
+});
 // ====================== ECOMMERCE ======================
 
 
