@@ -1977,26 +1977,8 @@ app.post('/api/payouts/create-onboarding-link', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
-// List of core Stripe Express supported countries
-const EXPRESS_SUPPORTED_COUNTRIES = ['US', 'CA', 'GB', 'AU', 'AT', 'BE', 'DE', 'DK', 'ES', 'FI', 'FR', 'IE', 'IT', 'JP', 'LU', 'NL', 'NO', 'NZ', 'PT', 'SE', 'SG'];
 
-app.post('/api/payouts/create-onboarding-link', async (req, res) => {
-    try {
-        const { phone, countryCode = 'US' } = req.body;
-        const sellerCountry = countryCode.toUpperCase();
 
-        // If the country doesn't support Stripe Express natively
-        if (!EXPRESS_SUPPORTED_COUNTRIES.includes(sellerCountry)) {
-            return res.status(400).json({ 
-                error: `Direct Stripe Express payouts are not supported in ${sellerCountry} yet. Alternative payout method required (e.g., Wise/Payoneer/Wire).` 
-            });
-        }
-
-        // ... Proceed with standard stripe.accounts.create() for supported countries
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
 
 
 const governGMinting = async ({
@@ -6201,7 +6183,7 @@ payout.ledgerReserveReference =
 await payout.save({
     session
 });
-            });
+
 
         // =====================================================
         // IDEMPOTENT DUPLICATE
@@ -7283,43 +7265,7 @@ app.post('/api/mpesa/b2c/timeout', async (req, res) => {
         });
     }
 });
-// Express route: /api/payouts/create-onboarding-link
-app.post('/api/payouts/create-onboarding-link', async (req, res) => {
-    const { phone } = req.body;
-    const cleanedPhone = cleanPhone(phone);
 
-    let user = await User.findOne({ identity: cleanedPhone });
-
-    // 1. Create connected Express account if it doesn't exist
-    if (!user?.stripeAccountId) {
-        const account = await stripe.accounts.create({
-            type: 'express',
-            country: 'US',
-            phone_number: cleanedPhone,
-            capabilities: {
-                transfers: { requested: true },
-                card_payments: { requested: true },
-            },
-            business_type: 'individual',
-        });
-
-        user = await User.findOneAndUpdate(
-            { identity: cleanedPhone },
-            { $set: { stripeAccountId: account.id } },
-            { new: true, upsert: true }
-        );
-    }
-
-    // 2. Create hosted onboarding link
-    const accountLink = await stripe.accountLinks.create({
-        account: user.stripeAccountId,
-        refresh_url: 'https://yourplatform.com/payouts/reauth',
-        return_url: 'https://yourplatform.com/payouts/success',
-        type: 'account_onboarding',
-    });
-
-    res.json({ url: accountLink.url });
-});
 
 // =========================================================================
 // AUTONOMOUS WEBHOOK HANDLER FUNCTIONS
@@ -11092,7 +11038,7 @@ setInterval(async () => {
 // =========================================================================
 // ENDPOINT 1: POST AN AD (SELLER LOCKS TOKENS INTO ESCROW DEPOSIT POOL)
 // =========================================================================
-
+// =========================================================================
 app.post('/api/orders/create', async (req, res) => {
     try {
         const {
@@ -11278,6 +11224,7 @@ app.post('/api/orders/mark-paid', async (req, res) => {
     }
 });
 
+
 // =========================================================================
 // ENDPOINT 4: SELLER RELEASES ESCROW (VERIFIES FIAT IN HAND, CALCULATES PAYOUT)
 // =========================================================================
@@ -11329,6 +11276,8 @@ await buyer.save();
     }
 });
 
+
+
 // =========================================================================
 // ENDPOINT 5: FETCH MARKETPLACE BOARD (DYNAMIC REAL-TIME FX INDEX ESTIMATES)
 // =========================================================================
@@ -11342,6 +11291,7 @@ app.get('/api/orders/open', async (req, res) => {
         return res.status(500).json({ success: false, message: err.message });
     }
 });
+
 
 
 // =========================================================================
@@ -11504,6 +11454,7 @@ app.post('/api/g/transfer', async (req, res) => {
         await session.endSession();
     }
 });
+// === MERCHANT DASHBOARD BACKEND ===
 // =========================================================================
 // ENDPOINT: G MERCHANT REDEMPTION HISTORY
 // =========================================================================
@@ -12387,6 +12338,7 @@ app.post('/api/ecommerce/sales', (req, res) => {
 app.get('/api/ip/logs', (req, res) => {
   res.json({ totalLogs: db.ipLogs.length, logs: db.ipLogs });
 });
+
 
 
 // In processGridSuccess(), add case for product_purchase if needed
