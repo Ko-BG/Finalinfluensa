@@ -2804,41 +2804,12 @@ io.on('connection', (socket) => {
 });
 // ============================================================
 // IP REGISTRATION ACCESS PAYMENT
-// STANDARD PRICE: 100 PER REGISTERED IP
-//
-// CREATOR: 92%
-// PLATFORM: 8%
+// KSh 10 PER REGISTERED IP
+// 100% PLATFORM — NO CREATOR SPLIT
 // ============================================================
 
-const IP_ACCESS_PRICE_USD = 10;
+const IP_ACCESS_PRICE_KES = 10;
 
-const CREATOR_SPLIT_PERCENT = 92;
-const PLATFORM_SPLIT_PERCENT = 8;
-
-
-// ============================================================
-// CALCULATE 92% / 8%
-// ============================================================
-
-function calculateCreatorSplit(amount) {
-
-    const creatorAmount =
-        Number(
-            (amount * (CREATOR_SPLIT_PERCENT / 100))
-                .toFixed(2)
-        );
-
-    const platformFee =
-        Number(
-            (amount * (PLATFORM_SPLIT_PERCENT / 100))
-                .toFixed(2)
-        );
-
-    return {
-        creatorAmount,
-        platformFee
-    };
-}
 
 // ============================================================
 // CHECK WHETHER USER HAS ALREADY PAID FOR THIS IP
@@ -2894,11 +2865,11 @@ async function createPendingIPAccessTransaction({
         // Fixed KSh 10 access charge.
         amountPaid: IP_ACCESS_PRICE_KES,
 
-        // 8% goes to the platform.
+        // 100% goes to the platform.
         platformFee: IP_ACCESS_PRICE_KES,
 
         // No creator split.
-        creatorAmount: 8,
+        creatorAmount: 0,
 
         currency,
 
@@ -3767,6 +3738,61 @@ app.post('/api/flw-webhook', async (req, res) => {
     }
     res.status(200).end();
 });
+ // ============================================================
+// START IP ACCESS PAYMENT
+// ============================================================
+
+app.post("/api/ip/access/pay", async (req, res) => {
+
+    try {
+
+        const {
+            phone,
+            ipRegistrationID
+        } = req.body;
+
+        if (!phone) {
+            return res.status(400).json({
+                success: false,
+                error: "PHONE_REQUIRED"
+            });
+        }
+
+        if (!ipRegistrationID) {
+            return res.status(400).json({
+                success: false,
+                error: "IP_REGISTRATION_ID_REQUIRED"
+            });
+        }
+
+        const result =
+            await triggerUniversalIPAccess(
+                phone,
+                ipRegistrationID
+            );
+
+        return res.json(result);
+
+    } catch (error) {
+
+        console.error(
+            "❌ IP ACCESS PAYMENT ROUTE:",
+            error.message
+        );
+
+        return res.status(500).json({
+            success: false,
+            error:
+                error.message ||
+                "IP_ACCESS_PAYMENT_FAILED"
+        });
+    }
+});
+// ============================================================
+// IP ACCESS — M-PESA CALLBACK HANDLER
+// KSh 10 per registered IP
+// 100% of access revenue belongs to iNFLUENSA
+// ============================================================
 
 async function handleIPAccessMpesaCallback(callbackData) {
     try {
@@ -7669,438 +7695,35 @@ app.post(
 );
 app.get('/api/ip/registrations', async (req, res) => {
     try {
+
+        console.log('📚 IP CATALOGUE REQUEST');
+
         const registrations = await IPRegistration.find({})
-            .select('_id ipCid ipType title ownerName description status fileCount createdAt registeredAt')
+            .select(
+                '_id ipCid ipType title ownerName description status fileCount createdAt registeredAt'
+            )
             .sort({ createdAt: -1 })
             .lean();
 
-        const publicRegistrations = registrations.map(ip => ({
-            _id: ip._id,
-            ipType: ip.ipType,
-            title: ip.title,
-            ownerName: ip.ownerName,
-            description: ip.description,
-            status: ip.status,
-            fileCount: ip.fileCount,
-            createdAt: ip.createdAt,
-            registeredAt: ip.registeredAt,
-
-            // NEVER expose the full IP-CID publicly
-            ipCid: ip.ipCid
-                ? `••••••••••••••••••••••${String(ip.ipCid).slice(-7)}`
-                : null
-        }));
+        console.log(
+            `📚 IP CATALOGUE: ${registrations.length} registrations found`
+        );
 
         return res.json({
             success: true,
-            registrations: publicRegistrations
+            registrations
         });
 
     } catch (error) {
+
         console.error(
-            '❌ IP CATALOGUE LOAD ERROR:',
+            '❌ IP CATALOGUE ERROR:',
             error
         );
 
         return res.status(500).json({
             success: false,
             error: 'IP_CATALOGUE_LOAD_FAILED',
-            message: error.message
-        });
-    }
-});
-// ============================================================
-// IP ACCESS — VIEW MASKED RECORD AFTER PAYMENT
-// ============================================================
-
-app.get('/api/ip/registrations/:id/access', async (req, res) => {
-    try {
-        const registrationId = req.params.id;
-
-        const userId = req.user?._id;
-
-        if (!userId) {
-            return res.status(401).json({
-                success: false,
-                error: "AUTHENTICATION_REQUIRED"
-            });
-        }
-
-        if (!registrationId) {
-            return res.status(400).json({
-                success: false,
-                error: "IP_REGISTRATION_ID_REQUIRED"
-            });
-        }
-
-        // Registered M-Pesa number is stored in User.identity
-        const user = await User.findById(userId).lean();
-
-        if (!user) {
-            return res.status(401).json({
-                success: false,
-                error: "USER_NOT_FOUND"
-            });
-        }
-
-        const phone = user.identity;
-
-        if (!phone) {
-            return res.status(401).json({
-                success: false,
-                error: "MPESA_PHONE_NOT_FOUND"
-            });
-        }
-
-        const cleanedPhone = cleanPhone(phone);
-
-        if (!cleanedPhone) {
-            return res.status(401).json({
-                success: false,
-                error: "INVALID_MPESA_PHONE"
-            });
-        }
-
-        const registration =
-            await IPRegistration.findById(registrationId).lean();
-
-        if (!registration) {
-            return res.status(404).json({
-                success: false,
-                error: "IP_REGISTRATION_NOT_FOUND"
-            });
-        }
-
-        const paid = await hasPaidForIPAccess(
-            registrationId,
-            cleanedPhone
-        );
-
-        if (!paid) {
-            return res.status(402).json({
-                success: false,
-                paymentRequired: true,
-                error: "IP_ACCESS_PAYMENT_REQUIRED",
-                amount: 10,
-                currency: "KES"
-            });
-        }
-
-        // ONLY LAST 7 CHARACTERS ARE RELEASED
-        const maskedIpCid = registration.ipCid
-            ? `••••••••••••••••••••••${String(registration.ipCid).slice(-7)}`
-            : null;
-
-        return res.json({
-            success: true,
-            paid: true,
-            registration: {
-                id: registration._id,
-                cid: registration.cid,
-                ipCid: maskedIpCid,
-                ipType: registration.ipType,
-                title: registration.title,
-                ownerName: registration.ownerName,
-                nationalId: registration.nationalId,
-                description: registration.description,
-                registrant: registration.registrant,
-                status: registration.status,
-                contentHash: registration.contentHash,
-                fileCount: registration.fileCount,
-                createdAt: registration.createdAt,
-                registeredAt: registration.registeredAt,
-                files: registration.files
-            }
-        });
-
-    } catch (error) {
-        console.error("❌ IP ACCESS ERROR:", error);
-
-        return res.status(500).json({
-            success: false,
-            error: "IP_ACCESS_FAILED",
-            message: error.message
-        });
-    }
-});
-// ============================================================
-// IP ACCESS PAYMENT
-// ============================================================
-
-app.post("/api/ip/access/pay", async (req, res) => {
-    try {
-        const { ipRegistrationID } = req.body;
-
-        const userId = req.user?._id;
-
-        if (!userId) {
-            return res.status(401).json({
-                success: false,
-                error: "AUTHENTICATION_REQUIRED"
-            });
-        }
-
-        if (!ipRegistrationID) {
-            return res.status(400).json({
-                success: false,
-                error: "IP_REGISTRATION_ID_REQUIRED"
-            });
-        }
-
-        const user = await User.findById(userId).lean();
-
-        if (!user) {
-            return res.status(401).json({
-                success: false,
-                error: "USER_NOT_FOUND"
-            });
-        }
-
-        // Registered M-Pesa phone is stored in identity
-        const phone = user.identity;
-
-        if (!phone) {
-            return res.status(401).json({
-                success: false,
-                error: "MPESA_PHONE_NOT_FOUND"
-            });
-        }
-
-        const cleanedPhone = cleanPhone(phone);
-
-        if (!cleanedPhone) {
-            return res.status(401).json({
-                success: false,
-                error: "INVALID_MPESA_PHONE"
-            });
-        }
-
-        const result = await triggerUniversalIPAccess(
-            cleanedPhone,
-            ipRegistrationID
-        );
-
-        return res.json(result);
-
-    } catch (error) {
-        console.error("❌ IP ACCESS PAYMENT ROUTE:", error);
-
-        return res.status(500).json({
-            success: false,
-            error: error.message || "IP_ACCESS_PAYMENT_FAILED"
-        });
-    }
-});
-// ============================================================
-// IP-CID — PROTECTED DOWNLOAD
-// ============================================================
-
-app.get('/api/ip/registrations/:id/ipcid/download', async (req, res) => {
-    try {
-        const registrationId = req.params.id;
-
-        const userId = req.user?._id;
-
-        if (!userId) {
-            return res.status(401).json({
-                success: false,
-                error: "AUTHENTICATION_REQUIRED"
-            });
-        }
-
-        if (!registrationId) {
-            return res.status(400).json({
-                success: false,
-                error: "IP_REGISTRATION_ID_REQUIRED"
-            });
-        }
-
-        // Registered M-Pesa phone is stored in User.identity
-        const user = await User.findById(userId).lean();
-
-        if (!user) {
-            return res.status(401).json({
-                success: false,
-                error: "USER_NOT_FOUND"
-            });
-        }
-
-        const phone = user.identity;
-
-        if (!phone) {
-            return res.status(401).json({
-                success: false,
-                error: "MPESA_PHONE_NOT_FOUND"
-            });
-        }
-
-        const cleanedPhone = cleanPhone(phone);
-
-        if (!cleanedPhone) {
-            return res.status(401).json({
-                success: false,
-                error: "INVALID_MPESA_PHONE"
-            });
-        }
-
-        const registration =
-            await IPRegistration.findById(registrationId).lean();
-
-        if (!registration) {
-            return res.status(404).json({
-                success: false,
-                error: "IP_REGISTRATION_NOT_FOUND"
-            });
-        }
-
-        const paid = await hasPaidForIPAccess(
-            registrationId,
-            cleanedPhone
-        );
-
-        if (!paid) {
-            return res.status(402).json({
-                success: false,
-                paymentRequired: true,
-                error: "IP_ACCESS_PAYMENT_REQUIRED",
-                amount: 10,
-                currency: "KES"
-            });
-        }
-
-        if (!registration.ipCid) {
-            return res.status(404).json({
-                success: false,
-                error: "IP_CID_NOT_FOUND"
-            });
-        }
-
-        res.setHeader(
-            "Content-Type",
-            "text/plain; charset=utf-8"
-        );
-
-        res.setHeader(
-            "Content-Disposition",
-            `attachment; filename="IP-CID-${registrationId}.txt"`
-        );
-
-        return res.send(registration.ipCid);
-
-    } catch (error) {
-        console.error("❌ IP-CID DOWNLOAD ERROR:", error);
-
-        return res.status(500).json({
-            success: false,
-            error: "IP_CID_DOWNLOAD_FAILED",
-            message: error.message
-        });
-    }
-});
-
-
-// ============================================================
-// DOWNLOAD FILES (ZIP)
-// GET /api/ip/registrations/:id/files/download
-// ============================================================
-app.get('/api/ip/registrations/:id/files/download', async (req, res) => {
-    try {
-        const registrationId = req.params.id;
-        const userId = req.user?._id;
-
-        if (!userId) {
-            return res.status(401).json({
-                success: false,
-                error: "AUTHENTICATION_REQUIRED"
-            });
-        }
-
-        if (!registrationId) {
-            return res.status(400).json({
-                success: false,
-                error: "IP_REGISTRATION_ID_REQUIRED"
-            });
-        }
-
-        const user = await User.findById(userId).lean();
-
-        if (!user) {
-            return res.status(401).json({
-                success: false,
-                error: "USER_NOT_FOUND"
-            });
-        }
-
-        const phone = user.identity;
-        const cleanedPhone = cleanPhone(phone);
-
-        if (!cleanedPhone) {
-            return res.status(401).json({
-                success: false,
-                error: "INVALID_MPESA_PHONE"
-            });
-        }
-
-        // Must be paid
-        const paid = await hasPaidForIPAccess(registrationId, cleanedPhone);
-
-        if (!paid) {
-            return res.status(402).json({
-                success: false,
-                paymentRequired: true,
-                error: "IP_ACCESS_PAYMENT_REQUIRED",
-                amount: 10,
-                currency: "KES"
-            });
-        }
-
-        const registration = await IPRegistration.findById(registrationId).lean();
-
-        if (!registration) {
-            return res.status(404).json({
-                success: false,
-                error: "IP_REGISTRATION_NOT_FOUND"
-            });
-        }
-
-        if (!registration.files || registration.files.length === 0) {
-            return res.status(404).json({
-                success: false,
-                error: "NO_FILES_FOUND"
-            });
-        }
-
-        // Create ZIP
-        const archiver = require('archiver');
-        const fs = require('fs');
-        const path = require('path');
-
-        const archive = archiver('zip', { zlib: { level: 9 } });
-
-        res.setHeader('Content-Type', 'application/zip');
-        res.setHeader(
-            'Content-Disposition',
-            `attachment; filename="IP-Files-${registrationId}.zip"`
-        );
-
-        archive.pipe(res);
-
-        for (const file of registration.files) {
-            if (file.path && fs.existsSync(file.path)) {
-                archive.file(file.path, {
-                    name: file.originalName || file.filename || path.basename(file.path)
-                });
-            }
-        }
-
-        await archive.finalize();
-
-    } catch (error) {
-        console.error("❌ IP FILES DOWNLOAD ERROR:", error);
-
-        return res.status(500).json({
-            success: false,
-            error: "IP_FILES_DOWNLOAD_FAILED",
             message: error.message
         });
     }
