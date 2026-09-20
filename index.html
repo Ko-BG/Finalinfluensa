@@ -416,13 +416,6 @@
 
 </div>
 
-
-
-/* =========================================================
-   IP CATALOGUE
-   ========================================================= */
-
-
 <!-- ECOMMERCE SECTION (hidden by default) -->
 <section id="ecomSection" class="hidden lg:col-span-12">
   <div class="flex justify-between items-center mb-6">
@@ -3056,25 +3049,75 @@ function escapeAttribute(value) {
 
 
 /* =========================================================
-   LOAD CATALOGUE WHEN TAB 2 OPENS
+   TAB SWITCHING — 3 TABS
    ========================================================= */
 
-const originalSwitchTab =
-  window.switchTab;
+function switchTab(index) {
 
+    const ecomSection = document.getElementById('ecomSection');
+    const catalogueContent = document.getElementById('catalogue-content');
 
-window.switchTab = function(index) {
+    const tabIP = document.getElementById('tab-ip');
+    const tabEcom = document.getElementById('tab-ecom');
+    const tabCatalogue = document.getElementById('tab-catalogue');
 
-  originalSwitchTab(index);
+    const indicator = document.getElementById('tab-indicator');
 
+    // Hide E-Commerce and Catalogue first
+    if (ecomSection) {
+        ecomSection.classList.add('hidden');
+    }
 
-  if (index === 2) {
+    if (catalogueContent) {
+        catalogueContent.classList.add('hidden');
+    }
 
-    loadIPCatalogue();
+    // Remove active state from all tabs
+    [tabIP, tabEcom, tabCatalogue].forEach(tab => {
+        if (tab) {
+            tab.classList.remove('tab-active');
+        }
+    });
 
-  }
+    // E-Commerce
+    if (index === 1) {
+        if (ecomSection) {
+            ecomSection.classList.remove('hidden');
+        }
 
-};
+        if (tabEcom) {
+            tabEcom.classList.add('tab-active');
+        }
+    }
+
+    // IP Catalogue
+    if (index === 2) {
+        if (catalogueContent) {
+            catalogueContent.classList.remove('hidden');
+        }
+
+        if (tabCatalogue) {
+            tabCatalogue.classList.add('tab-active');
+        }
+
+        if (typeof loadIPCatalogue === 'function') {
+            loadIPCatalogue();
+        }
+    }
+
+    // IP Marketplace
+    if (index === 0) {
+        if (tabIP) {
+            tabIP.classList.add('tab-active');
+        }
+    }
+
+    // Sliding indicator
+    if (indicator) {
+        indicator.style.width = '33.3333%';
+        indicator.style.left = `${index * 33.3333}%`;
+    }
+}
 
 // Route: /payouts/claim
 async function handleClaimPayouts(countryCode = 'US') {
