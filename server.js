@@ -4017,71 +4017,70 @@ app.get(
 
 
             // ------------------------------------------------
-            // 5. GENERATE SIGNED URL FOR EVERY FILE
-            // ------------------------------------------------
+// 5. GENERATE SIGNED URL FOR EVERY FILE
+// ------------------------------------------------
 
-            const files = [];
+const files = [];
 
-            for (
-                const file
-                of registration.supportingFiles
-            ) {
+for (
+    const file
+    of registration.supportingFiles
+) {
 
-                if (!file.s3Key) {
+    if (!file.path) {
 
-                    console.warn(
-                        "⚠️ IP ACCESS: File has no S3 key:",
-                        file.originalName
-                    );
+        console.warn(
+            "⚠️ IP ACCESS: File has no S3 path:",
+            file.originalName
+        );
 
-                    continue;
-                }
-
-
-                const command =
-                    new GetObjectCommand({
-
-                        Bucket:
-                            process.env.AWS_S3_BUCKET_NAME,
-
-                        Key:
-                            file.s3Key
-                    });
+        continue;
+    }
 
 
-                const signedUrl =
-                    await getSignedUrl(
-                        s3,
-                        command,
-                        {
-                            expiresIn: 300
-                        }
-                    );
+    const command =
+        new GetObjectCommand({
+
+            Bucket:
+                process.env.AWS_S3_BUCKET_NAME,
+
+            Key:
+                file.path
+        });
 
 
-                files.push({
-
-                    fileName:
-                        file.fileName ||
-                        file.originalName,
-
-                    originalName:
-                        file.originalName,
-
-                    mimeType:
-                        file.mimeType,
-
-                    size:
-                        file.size,
-
-                    url:
-                        signedUrl,
-
-                    expiresIn:
-                        300
-                });
+    const signedUrl =
+        await getSignedUrl(
+            s3,
+            command,
+            {
+                expiresIn: 300
             }
+        );
 
+
+    files.push({
+
+        fileName:
+            file.storedName ||
+            file.originalName,
+
+        originalName:
+            file.originalName,
+
+        mimeType:
+            file.mimeType,
+
+        size:
+            file.size,
+
+        url:
+            signedUrl,
+
+        expiresIn:
+            300
+    });
+}
 
             // ------------------------------------------------
             // 6. MAKE SURE FILES WERE ACTUALLY GENERATED
