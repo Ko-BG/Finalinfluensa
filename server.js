@@ -3906,6 +3906,273 @@ async function handleIPAccessMpesaCallback(callbackData) {
         );
     }
 }
+
+// ============================================================
+// IP ACCESS — VIEW / DOWNLOAD ALL REGISTERED FILES
+// One KSh 10 payment = access to all files for this IP
+// ============================================================
+
+app.get(
+    "/api/ip/access/file/:ipRegistrationID",
+    async (req, res) => {
+
+        try {
+
+            const {
+                ipRegistrationID
+            } = req.params;
+
+            const {
+                phone
+            } = req.query;
+
+
+            // ------------------------------------------------
+            // 1. VALIDATION
+            // ------------------------------------------------
+
+            if (!ipRegistrationID) {
+                return res.status(400).json({
+                    success: false,
+                    error: "IP_REGISTRATION_ID_REQUIRED"
+                });
+            }
+
+            if (!phone) {
+                return res.status(400).json({
+                    success: false,
+                    error: "PHONE_REQUIRED"
+                });
+            }
+
+
+            // ------------------------------------------------
+            // 2. VERIFY COMPLETED PAYMENT
+            // ------------------------------------------------
+
+            const transaction =
+                await Transaction.findOne({
+                    type: "ip_access",
+                    ipRegistrationID: ipRegistrationID,
+                    userPhone: phone,
+                    status: "completed"
+                })
+                .sort({
+                    completedAt: -1
+                });
+
+
+            if (!transaction) {
+
+                return res.status(402).json({
+                    success: false,
+                    requiresPayment: true,
+                    error:
+                        "IP_ACCESS_PAYMENT_REQUIRED",
+                    message:
+                        "Payment of KSh 10 is required to view or download these files."
+                });
+            }
+
+
+            // ------------------------------------------------
+            // 3. FIND IP REGISTRATION
+            // ------------------------------------------------
+
+            const registration =
+                await IPRegistration.findById(
+                    ipRegistrationID
+                );
+
+
+            if (!registration) {
+
+                return res.status(404).json({
+                    success: false,
+                    error:
+                        "IP_REGISTRATION_NOT_FOUND"
+                });
+            }
+
+
+            // ------------------------------------------------
+            // 4. CHECK FILES
+            // ------------------------------------------------
+
+            if (
+                !Array.isArray(
+                    registration.supportingFiles
+                ) ||
+                registration.supportingFiles.length === 0
+            ) {
+
+                return res.status(404).json({
+                    success: false,
+                    error:
+                        "IP_FILES_NOT_FOUND",
+                    message:
+                        "No supporting files are associated with this IP registration."
+                });
+            }
+
+
+            // ------------------------------------------------
+            // 5. GENERATE SIGNED URL FOR EVERY FILE
+            // ------------------------------------------------
+
+            const files = [];
+
+            for (
+                const file
+                of registration.supportingFiles
+            ) {
+
+                if (!file.s3Key) {
+
+                    console.warn(
+                        "⚠️ IP ACCESS: File has no S3 key:",
+                        file.originalName
+                    );
+
+                    continue;
+                }
+
+
+                const command =
+                    new GetObjectCommand({
+
+                        Bucket:
+                            process.env.AWS_S3_BUCKET_NAME,
+
+                        Key:
+                            file.s3Key
+                    });
+
+
+                const signedUrl =
+                    await getSignedUrl(
+                        s3,
+                        command,
+                        {
+                            expiresIn: 300
+                        }
+                    );
+
+
+                files.push({
+
+                    fileName:
+                        file.fileName ||
+                        file.originalName,
+
+                    originalName:
+                        file.originalName,
+
+                    mimeType:
+                        file.mimeType,
+
+                    size:
+                        file.size,
+
+                    url:
+                        signedUrl,
+
+                    expiresIn:
+                        300
+                });
+            }
+
+
+            // ------------------------------------------------
+            // 6. MAKE SURE FILES WERE ACTUALLY GENERATED
+            // ------------------------------------------------
+
+            if (files.length === 0) {
+
+                return res.status(500).json({
+                    success: false,
+                    error:
+                        "NO_VALID_S3_FILES"
+                });
+            }
+
+
+            // ------------------------------------------------
+            // 7. LOG ACCESS
+            // ------------------------------------------------
+
+            console.log(
+                `✅ IP FILE ACCESS | ` +
+                `IP: ${registration.ipCid} | ` +
+                `Phone: ${phone} | ` +
+                `Files: ${files.length} | ` +
+                `Transaction: ${transaction._id}`
+            );
+
+
+            // ------------------------------------------------
+            // 8. RETURN ALL FILE ACCESS
+            // ------------------------------------------------
+
+            return res.json({
+
+                success: true,
+
+                access: true,
+
+                ipRegistrationID:
+                    registration._id,
+
+                ipCid:
+                    registration.ipCid,
+
+                fileCount:
+                    files.length,
+
+                files:
+                    files,
+
+                payment: {
+
+                    transactionID:
+                        transaction._id,
+
+                    amountPaid:
+                        transaction.amountPaid,
+
+                    status:
+                        transaction.status,
+
+                    completedAt:
+                        transaction.completedAt
+                },
+
+                expiresIn:
+                    300
+            });
+
+
+        } catch (error) {
+
+            console.error(
+                "❌ IP FILE ACCESS ERROR:",
+                error
+            );
+
+            return res.status(500).json({
+
+                success: false,
+
+                error:
+                    "IP_FILE_ACCESS_FAILED",
+
+                message:
+                    error.message
+            });
+        }
+    }
+);
+
 // ✅ Explicitly pass express.raw middleware to preserve raw Buffer for Stripe
 app.post('/api/stripe-webhook', express.raw({ type: 'application/json' }), async (req, res) => {
     const sig = req.headers['stripe-signature'];
