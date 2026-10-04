@@ -2671,13 +2671,13 @@ async function downloadIPCID(ip) {
 
   try {
 
-    const registrationId =
+    const registrationID =
       ip._id ||
       ip.id ||
-      ip.registrationId;
+      ip.registrationID;
 
 
-    if (!registrationId) {
+    if (!registrationID) {
 
       alert(
         'IP-CID download is not available for this registration yet.'
@@ -2688,7 +2688,7 @@ async function downloadIPCID(ip) {
 
 
     const response = await fetch(
-      `${API_URL}/ip/registrations/${encodeURIComponent(registrationId)}/ipcid/download`,
+      `${API_URL}/ip/registrations/${encodeURIComponent(registrationID)}/ipcid/download`,
       {
         method: 'GET',
         credentials: 'include'
@@ -2941,13 +2941,13 @@ async function downloadRegisteredIP(ip) {
     }
 
 
-    const registrationId =
+    const registrationID =
       ip._id ||
       ip.id ||
-      ip.registrationId;
+      ip.registrationID;
 
 
-    if (!registrationId) {
+    if (!registrationID) {
 
       alert(
         'Download is not available for this registration yet.'
@@ -2958,7 +2958,7 @@ async function downloadRegisteredIP(ip) {
 
 
     const response = await fetch(
-      `${API_URL}/ip/registrations/${encodeURIComponent(registrationId)}/download`,
+      `${API_URL}/ip/registrations/${encodeURIComponent(registrationID)}/download`,
       {
         method: 'GET',
         credentials: 'include'
@@ -4717,15 +4717,82 @@ async function shareAndDownload(postId, price) {
     if(confirm(`Confirm Premium License for KES ${10.0*price}?`)) await unlockIP(postId, 'share_download');
 }
 async function downloadIPCID(ip) {
+async function accessIPFiles(ipRegistrationID, phone) {
 
+    try {
+
+        // -----------------------------------------
+        // 1. CHECK WHETHER ACCESS HAS BEEN PAID
+        // -----------------------------------------
+
+        const response = await fetch(
+            `/api/ip/access/file/${ipRegistrationID}?phone=${encodeURIComponent(phone)}`
+        );
+
+        const data = await response.json();
+
+
+        // -----------------------------------------
+        // 2. PAYMENT REQUIRED
+        // -----------------------------------------
+
+        if (response.status === 402) {
+
+            const pay = confirm(
+                "Pay KSh 10 to view and download this IP?"
+            );
+
+            if (!pay) {
+                return;
+            }
+
+            await payForIPAccess(
+                ipRegistrationID,
+                phone
+            );
+
+            return;
+        }
+
+
+        // -----------------------------------------
+        // 3. FILE ACCESS GRANTED
+        // -----------------------------------------
+
+        if (data.success && data.files) {
+
+            displayIPFiles(data.files);
+
+            return;
+        }
+
+
+        throw new Error(
+            data.message ||
+            "Unable to access files."
+        );
+
+    } catch (error) {
+
+        console.error(
+            "IP FILE ACCESS ERROR:",
+            error
+        );
+
+        alert(
+            error.message ||
+            "Unable to access this IP."
+        );
+    }
+}
   try {
 
-    const registrationId =
+    const registrationID =
       ip._id ||
       ip.id ||
-      ip.registrationId;
+      ip.registrationID;
 
-    if (!registrationId) {
+    if (!registrationID) {
       alert('IP-CID download is not available for this registration.');
       return;
     }
@@ -4736,7 +4803,7 @@ async function downloadIPCID(ip) {
      */
 
     const response = await fetch(
-      `${API_URL}/ip/registrations/${encodeURIComponent(registrationId)}/ipcid/download`,
+      `${API_URL}/ip/registrations/${encodeURIComponent(registrationID)}/ipcid/download`,
       {
         method: 'GET',
         credentials: 'include'
