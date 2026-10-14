@@ -4453,8 +4453,8 @@ app.post('/api/mpesa/stk/callback', async (req, res) => {
         const checkoutID =
             callback.CheckoutRequestID;
 
-        const resultCode =
-            Number(callback.ResultCode);
+        const resultCode = callback.ResultCode !== undefined ? Number(callback.ResultCode) : 1;
+
 
         const resultDesc =
             callback.ResultDesc || "";
