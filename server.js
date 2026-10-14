@@ -4450,25 +4450,24 @@ app.post('/api/mpesa/stk/callback', async (req, res) => {
         // BASIC CALLBACK DATA
         // =====================================================
 
-        const checkoutID =
-            callback.CheckoutRequestID;
+        const checkoutID = callback.CheckoutRequestID;
 
-        const resultCode = callback.ResultCode !== undefined ? Number(callback.ResultCode) : 1;
+const rawResultCode = Number(callback.ResultCode);
+const resultCode = !isNaN(rawResultCode) ? rawResultCode : 1;
 
+const resultDesc = callback.ResultDesc || "";
 
-        const resultDesc =
-            callback.ResultDesc || "";
+if (!checkoutID) {
+    console.error(
+        "❌ STK CALLBACK MISSING CHECKOUT ID"
+    );
+    return;
+}
 
-        if (!checkoutID) {
-            console.error(
-                "❌ STK CALLBACK MISSING CHECKOUT ID"
-            );
-            return;
-        }
+console.log(
+    `🔎 Processing STK callback: ${checkoutID}`
+);
 
-        console.log(
-            `🔎 Processing STK callback: ${checkoutID}`
-        );
 
         // =====================================================
         // FIND OUR TRANSACTION
