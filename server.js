@@ -14,7 +14,7 @@ const router = express.Router();
 const dns = require('dns');
 dns.setDefaultResultOrder('ipv4first');
 
-const ipUpload = multer(); // <-- Add this line to define ipUpload
+
 
 
  
@@ -53,7 +53,7 @@ const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const multer = require('multer');
 const multerS3 = require('multer-s3');
 const path = require('path');
-
+const ipUpload = multer(); // <-- Add this line to define ipUpload
 
 const s3 = new S3Client({
     region: process.env.AWS_REGION,
