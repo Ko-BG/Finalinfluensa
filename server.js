@@ -63,13 +63,14 @@ const s3 = new S3Client({
     },
 });
 
-// Configure Multer to stream directly to S3
-const upload = multer({
+
+// Configure Multer to stream directly to S3 and name it ipUpload
+const ipUpload = multer({
     storage: multerS3({
         s3: s3,
         bucket: process.env.AWS_S3_BUCKET_NAME,
         
-        // 1. Force correct MIME type in S3 (e.g. video/mp4 instead of application/octet-stream)
+        // 1. Force correct MIME type in S3
         contentType: multerS3.AUTO_CONTENT_TYPE,
         
         // 2. Prevent iOS WebKit disk-cache CORS corruption
@@ -86,7 +87,8 @@ const upload = multer({
     limits: { fileSize: 100 * 1024 * 1024 }, // 100 MB limit
 });
 
-module.exports = upload;
+module.exports = ipUpload;
+
 
 
 app.use(cors());
